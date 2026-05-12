@@ -13,7 +13,7 @@ export default function Landing() {
         {/* Hero */}
         <section className="grid min-h-107.5 grid-cols-1 items-center gap-8 px-10 py-14 md:grid-cols-2">
           <div>
-            <div className="mb-7 inline-flex items-center gap-2 rounded-full bg-emerald-100 px-5 py-2 font-bold text-emerald-900">
+            <div className="mb-7 inline-flex items-center gap-2 rounded-full bg-emerald-100 px-5 py-2 font-bold text-red-50">
               <MapPin size={18} />
               San Vicente, Buenos Aires
             </div>
