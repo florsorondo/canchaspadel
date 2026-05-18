@@ -1,12 +1,11 @@
 import './App.css'
-import Landing from './pages/Landing'
-import Dashboard from './pages/Dashboard'
+import Rutas from './routes/routes';
 
 function App() {
 
   return (
     <>
-      <Dashboard />
+      <Rutas />
     </>
   )
 }
