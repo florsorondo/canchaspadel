@@ -32,9 +32,5 @@ export default function BookingSteps() {
       {handleStepper()}
     </div>
   );
-  return (
-  <div className="min-h-screen w-full bg-red-100">
-    {handleStepper()}
-  </div>
-);
+  
 }
