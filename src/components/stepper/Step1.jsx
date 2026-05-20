@@ -40,7 +40,7 @@ const courts = [
   },
 ];
 
-export default function NuevaReserva() {
+export default function Step1({ setStep }) {
   const [selectedCourt, setSelectedCourt] = useState(1);
 
   return (
@@ -141,7 +141,11 @@ export default function NuevaReserva() {
         <footer className="w-full px-5 sm:px-8 py-4 border-t border-[#e3ecf7] bg-white/80 backdrop-blur-md shadow-[0_-2px_10px_rgba(0,0,0,0.03)] flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
           <p className="text-sm text-[#64748b]">1 cancha seleccionada</p>
 
-          <button className="w-full sm:w-auto px-7 py-3 rounded-xl bg-[#315b96] text-white text-sm font-semibold shadow-lg hover:bg-[#254979] hover:shadow-xl transition-all">
+          <button 
+            className="w-full sm:w-auto px-7 py-3 rounded-xl bg-[#315b96] text-white text-sm font-semibold shadow-lg hover:bg-[#254979] hover:shadow-xl transition-all"
+            onClick={() => setStep(2)}
+
+          >
             Siguiente →
           </button>
         </footer>
