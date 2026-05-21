@@ -49,7 +49,7 @@ const Reservas = () => {
 
         <table className="w-full text-left">
           <thead>
-            <tr className="text-gray-400 text-sm border-b">
+            <tr className="text-[#64748b] text-sm border-b border-[#e3ecf7]">
               <th className="py-3">#</th>
               <th>Cliente</th>
                 <th>Contacto</th>
@@ -76,11 +76,11 @@ const ReservaRow = ({ reserva }) => {
     const styles = {
       Pagado: "bg-green-100 text-green-700",
       Señado: "bg-orange-100 text-orange-700",
-      Pendiente: "bg-gray-100 text-gray-500",
+      Pendiente: "bg-[#edf4ff] text-[#5b7db1]",
     };
   
     return (
-      <tr className="border-b text-gray-800">
+      <tr className="border-b border-[#eef2f7] text-[#0f172a]">
         <td className="py-5 font-bold text-gray-400">#{reserva.id}</td>
         <td className="font-semibold">{reserva.cliente}</td>
         <td>{reserva.contacto}</td>
@@ -100,5 +100,5 @@ const ReservaRow = ({ reserva }) => {
       </tr>
     );
   };
-  
+
 export default Reservas;

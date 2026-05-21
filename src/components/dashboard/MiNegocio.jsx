@@ -142,7 +142,7 @@ const MiNegocio = () => {
                 }
                 className={`w-14 h-7 rounded-full p-1 transition ${
                   pagosActivos[pago]
-                    ? "bg-[#50a77f]"
+                    ? "bg-[#315b96]"
                     : "bg-gray-300"
                 }`}
               >
@@ -159,7 +159,7 @@ const MiNegocio = () => {
         </div>
       </div>
 
-      <button className="w-full mt-8 bg-[#2f765b] text-white rounded-xl py-4 font-semibold hover:bg-[#27664e]">
+      <button className="w-full mt-8 bg-[#315b96] text-white rounded-xl py-4 font-semibold hover:bg-[#254979] transition-all">
         ✓ Guardar cambios
       </button>
     </div>

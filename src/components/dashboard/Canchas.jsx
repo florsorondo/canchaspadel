@@ -55,13 +55,13 @@ const Canchas = () => {
         <h2 className="text-2xl font-bold">Mis canchas</h2>
 
         <button
-          onClick={() => {
-            setCanchaEditando(null);
-            setModalAbierto(true);
-          }}
-          className="border border-gray-200 text-gray-400 rounded-xl px-6 py-3 font-semibold hover:bg-gray-50 w-full md:w-auto"
-        >
-          + Agregar
+            onClick={() => {
+                setCanchaEditando(null);
+                setModalAbierto(true);
+            }}
+            className="border border-[#d7e3f3] bg-white text-[#315b96] rounded-xl px-6 py-3 font-semibold hover:bg-[#eef5ff] transition-all w-full md:w-auto"
+            >
+            + Agregar
         </button>
       </div>
 
@@ -102,11 +102,11 @@ const Canchas = () => {
 };
 
 const CanchaCard = ({ cancha, onEditar, onEliminar }) => (
-  <div className="border border-gray-200 rounded-xl overflow-hidden">
+  <div className="bg-white/80 backdrop-blur-md border border-[#e3ecf7] rounded-2xl shadow-sm overflow-hidden">
     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-5">
       <div>
         <h3 className="text-xl font-bold">{cancha.nombre}</h3>
-        <p className="text-gray-400 font-semibold">
+        <p className="text-[#64748b] font-semibold">
           {cancha.tipo} · ${cancha.precio}/hr
         </p>
       </div>
@@ -115,7 +115,7 @@ const CanchaCard = ({ cancha, onEditar, onEliminar }) => (
         <span
           className={`px-3 py-1 rounded-full text-sm font-semibold ${
             cancha.activa
-              ? "bg-green-100 text-green-700"
+              ? "bg-[#e8f2ff] text-[#315b96]"
               : "bg-gray-100 text-gray-500"
           }`}
         >
@@ -143,7 +143,7 @@ const CanchaCard = ({ cancha, onEditar, onEliminar }) => (
         {cancha.horarios.map((hora) => (
           <button
             key={hora}
-            className="px-4 py-2 rounded-full border border-green-300 bg-green-50 text-green-800 font-semibold"
+            className="px-4 py-2 rounded-full border border-[#cfe0f5] bg-[#eef5ff] text-[#315b96] font-semibold"
           >
             {hora}
           </button>
@@ -167,7 +167,7 @@ const ModalCancha = ({ cancha, onClose, onSave }) => {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+      <div className="bg-white/90 backdrop-blur-md border border-[#e3ecf7] rounded-2xl shadow-xl p-6 w-full max-w-md">
         <h2 className="text-2xl font-bold mb-4">
           {cancha ? "Editar cancha" : "Agregar cancha"}
         </h2>
@@ -208,7 +208,7 @@ const ModalCancha = ({ cancha, onClose, onSave }) => {
               type="button"
               onClick={() => setDiasHabituales(!diasHabituales)}
               className={`w-14 h-7 rounded-full p-1 transition ${
-                diasHabituales ? "bg-[#50a77f]" : "bg-gray-300"
+                diasHabituales ? "bg-[#315b96]" : "bg-gray-300"
               }`}
             >
               <div
@@ -245,7 +245,7 @@ const ModalCancha = ({ cancha, onClose, onSave }) => {
                     }}
                     className={`px-4 py-2 rounded-full border transition font-semibold ${
                       activo
-                        ? "bg-[#2f765b] text-white border-[#2f765b]"
+                        ? "bg-[#315b96] text-white border-[#315b96]"
                         : "bg-white text-gray-500 border-gray-300"
                     }`}
                   >
@@ -273,7 +273,7 @@ const ModalCancha = ({ cancha, onClose, onSave }) => {
                 setHorarios([...horarios, horario]);
                 setHorario("");
               }}
-              className="bg-[#2f765b] text-white rounded-xl px-4 font-semibold"
+              className="bg-[#315b96] text-white rounded-xl px-4 font-semibold hover:bg-[#254979] transition-all"
             >
               +
             </button>
@@ -318,7 +318,7 @@ const ModalCancha = ({ cancha, onClose, onSave }) => {
                 horarios,
               })
             }
-            className="bg-[#2f765b] text-white rounded-xl px-5 py-3 font-semibold"
+            className="bg-[#315b96] text-white rounded-xl px-5 py-3 font-semibold hover:bg-[#254979] transition-all"
           >
             Guardar
           </button>
