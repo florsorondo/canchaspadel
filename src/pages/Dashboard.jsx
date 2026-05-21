@@ -10,9 +10,9 @@ const Dashboard = () => {
   const [tab, setTab] = useState("reservas");
 
   return (
-    <div className="min-h-screen w-full bg-[#f6f5f2] p-6">
-      <div className="w-full min-h-[calc(100vh-48px)] bg-white rounded-2xl overflow-hidden border border-gray-200">
-        <div className="bg-[#2f765b] text-white px-8 py-5 flex justify-between items-center">
+    <div className="relative min-h-screen w-full bg-gradient-to-br from-[#f8fbff] to-[#eef5ff] p-6 font-['Inter',sans-serif] overflow-hidden">
+      <div className="relative w-full min-h-[calc(100vh-48px)] bg-white/80 backdrop-blur-md rounded-2xl overflow-hidden border border-[#e3ecf7] shadow-sm">
+        <div className="bg-[#315b96] text-white px-8 py-5 flex justify-between items-center">
           <h1 className="text-2xl font-bold">
             {tab === "reservas" && "Panel de administración"}
             {tab === "canchas" && "Canchas"}
