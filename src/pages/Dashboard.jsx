@@ -4,7 +4,7 @@ import Reservas from "../components/dashboard/Reservas.jsx";
 import Canchas from "../components/dashboard/Canchas.jsx";
 import Ingresos from "../components/dashboard/Ingresos.jsx";
 import MiNegocio from "../components/dashboard/MiNegocio.jsx";
-
+import CrearEvento from "../components/dashboard/CrearEventos.jsx";
 
 const Dashboard = () => {
   const [tab, setTab] = useState("reservas");
@@ -18,6 +18,7 @@ const Dashboard = () => {
             {tab === "canchas" && "Canchas"}
             {tab === "negocio" && "Mi negocio"}
             {tab === "ingresos" && "Ingresos"}
+            {tab === "crear-evento" && "Crear Evento"}
           </h1>
 
           <span className="bg-white/20 px-4 py-1 rounded-full">
@@ -25,21 +26,46 @@ const Dashboard = () => {
           </span>
         </div>
 
-        <div className="flex gap-10 px-8 py-4 border-b">
-          <Tab label="Reservas" active={tab === "reservas"} onClick={() => setTab("reservas")} />
-          <Tab label="Canchas" active={tab === "canchas"} onClick={() => setTab("canchas")} />
-          <Tab label="Mi negocio" active={tab === "negocio"} onClick={() => setTab("negocio")} />
-          <Tab label="Ingresos" active={tab === "ingresos"} onClick={() => setTab("ingresos")} />
+        <div className="flex gap-10 px-8 py-4 border-b overflow-x-auto">
+          <Tab
+            label="Reservas"
+            active={tab === "reservas"}
+            onClick={() => setTab("reservas")}
+          />
+
+          <Tab
+            label="Canchas"
+            active={tab === "canchas"}
+            onClick={() => setTab("canchas")}
+          />
+
+          <Tab
+            label="Mi negocio"
+            active={tab === "negocio"}
+            onClick={() => setTab("negocio")}
+          />
+
+          <Tab
+            label="Ingresos"
+            active={tab === "ingresos"}
+            onClick={() => setTab("ingresos")}
+          />
+
+          <Tab
+            label="Crear Evento"
+            active={tab === "crear-evento"}
+            onClick={() => setTab("crear-evento")}
+          />
         </div>
 
         {tab === "reservas" && <Reservas />}
         {tab === "canchas" && <Canchas />}
         {tab === "negocio" && <MiNegocio />}
         {tab === "ingresos" && <Ingresos />}
+        {tab === "crear-evento" && <CrearEvento />}
       </div>
     </div>
   );
 };
-
 
 export default Dashboard;

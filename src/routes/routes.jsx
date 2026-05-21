@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import Landing from '../pages/Landing';
 import Dashboard from '../pages/Dashboard';
 import BookingSteps from '../pages/bookingsteps';
+import EventoCanchaLibre from '../components/dashboard/EventoCanchaLibre.jsx';
 
 export default function Rutas() {
   const [loading, setLoader] = useState(false);
@@ -14,6 +15,7 @@ export default function Rutas() {
         <Route path="/panel" element={<Dashboard />} />
         <Route path="/booking" element={<BookingSteps />} />
         <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/cancha-libre/:id" element={<EventoCanchaLibre />} />
       </Routes>
     </BrowserRouter>
   );
