@@ -1,3 +1,4 @@
+export default Navbar;
 const Navbar = () => {
     return (
         <header className="flex items-center justify-between border-b border-neutral-200 px-10 py-6">
@@ -25,4 +26,3 @@ const Navbar = () => {
     )
 }
 
-export default Navbar;
