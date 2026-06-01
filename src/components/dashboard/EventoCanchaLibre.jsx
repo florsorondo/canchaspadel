@@ -1,152 +1,140 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
 export default function EventoCanchaLibre() {
-
   const { id } = useParams();
 
-  const savedEvent = JSON.parse(
-    localStorage.getItem(`canchaLibre-${id}`)
-  );
+  const [evento, setEvento] = useState(null);
+  const [persona, setPersona] = useState({
+    nombre: "",
+    telefono: "",
+    email: "",
+  });
 
-  if (!savedEvent) {
+  useEffect(() => {
+    const eventoGuardado = JSON.parse(localStorage.getItem(`canchaLibre-${id}`));
+    setEvento(eventoGuardado);
+  }, [id]);
+
+  const handleAnotarse = (e) => {
+    e.preventDefault();
+
+    const eventoActualizado = JSON.parse(
+      localStorage.getItem(`canchaLibre-${id}`)
+    );
+
+    if (!eventoActualizado) {
+      alert("No se encontró el evento");
+      return;
+    }
+
+    const nuevoInscripto = {
+      id: Date.now(),
+      nombre: persona.nombre,
+      telefono: persona.telefono,
+      email: persona.email,
+      estadoPago: "Pendiente",
+    };
+
+    eventoActualizado.registeredPlayers = [
+      ...(eventoActualizado.registeredPlayers || []),
+      nuevoInscripto,
+    ];
+
+    localStorage.setItem(
+      `canchaLibre-${id}`,
+      JSON.stringify(eventoActualizado)
+    );
+
+    setEvento(eventoActualizado);
+
+    alert("Te anotaste correctamente");
+
+    setPersona({
+      nombre: "",
+      telefono: "",
+      email: "",
+    });
+  };
+
+  if (!evento) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f8fbff] font-['Inter',sans-serif]">
-        <p className="text-[#0f172a] text-lg font-medium">
-          Evento no encontrado
-        </p>
+      <div className="min-h-screen flex items-center justify-center bg-[#f8fbff]">
+        <p className="text-gray-500">Evento no encontrado.</p>
       </div>
     );
   }
 
-  const [players, setPlayers] = useState([]);
-
-  const [form, setForm] = useState({
-    name: "",
-    lastName: "",
-    email: "",
-    phone: "",
-  });
-
-  const handleRegister = (e) => {
-    e.preventDefault();
-
-    if (players.length >= Number(savedEvent.spots)) return;
-
-    const newPlayer = {
-      id: Date.now(),
-      ...form,
-    };
-
-    setPlayers([...players, newPlayer]);
-
-    setForm({
-      name: "",
-      lastName: "",
-      email: "",
-      phone: "",
-    });
-  };
-
-  const spotsLeft = Number(savedEvent.spots) - players.length;
-
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-[#f8fbff] to-[#eef5ff] font-['Inter',sans-serif] px-5 sm:px-8 py-8">
-
-      <section className="max-w-2xl mx-auto bg-white/80 backdrop-blur-md border border-[#e3ecf7] rounded-2xl shadow-sm p-4 sm:p-6">
-
-        <h1 className="text-xl sm:text-2xl font-semibold text-[#0f172a]">
-          Anotarse a cancha libre
+    <div className="min-h-screen bg-[#f8fbff] flex items-center justify-center px-5 py-8">
+      <div className="w-full max-w-xl bg-white rounded-3xl shadow-sm border border-[#e2e8f0] p-6">
+        <h1 className="text-2xl font-bold text-[#0f172a]">
+          {evento.title}
         </h1>
 
-        <p className="text-sm text-[#64748b] mt-1 mb-5">
-          Completá tus datos para reservar tu cupo.
+        <p className="text-[#64748b] mt-2">
+          {evento.court}
         </p>
 
-        <div className="rounded-2xl bg-[#eef6ff] border border-[#b8d7ff] p-4 mb-5">
-
-          <h2 className="font-semibold text-[#0f172a]">
-            {savedEvent.title}
-          </h2>
-
-          <p className="text-sm text-[#64748b] mt-1">
-            {savedEvent.court} · {savedEvent.date} · {savedEvent.time}
+        <div className="mt-5 grid gap-2 text-sm text-[#334155]">
+          <p>
+            <strong>Fecha:</strong> {evento.date || "Sin fecha"}
           </p>
-
-          <p className="text-sm font-semibold text-[#315b96] mt-2">
-            Cupos: {players.length}/{savedEvent.spots} · Quedan {spotsLeft}
+          <p>
+            <strong>Horario:</strong> {evento.time || "Sin horario"}
           </p>
-
-          <p className="text-sm font-semibold text-[#315b96] mt-1">
-            ${savedEvent.price} por persona
+          <p>
+            <strong>Precio:</strong> ${evento.price || "0"}
           </p>
-
+          <p>
+            <strong>Cupos:</strong>{" "}
+            {(evento.registeredPlayers || []).length}/{evento.spots}
+          </p>
         </div>
 
-        <form onSubmit={handleRegister} className="grid gap-3">
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-
-            <input
-              value={form.name}
-              onChange={(e) =>
-                setForm({ ...form, name: e.target.value })
-              }
-              placeholder="Nombre"
-              required
-              className="px-4 py-3 rounded-xl border border-[#e2e8f0] outline-none focus:border-[#4f8fe8]"
-            />
-
-            <input
-              value={form.lastName}
-              onChange={(e) =>
-                setForm({ ...form, lastName: e.target.value })
-              }
-              placeholder="Apellido"
-              required
-              className="px-4 py-3 rounded-xl border border-[#e2e8f0] outline-none focus:border-[#4f8fe8]"
-            />
-
+        {(evento.registeredPlayers || []).length >= Number(evento.spots) ? (
+          <div className="mt-6 bg-red-50 border border-red-100 text-red-700 rounded-2xl p-4 text-sm">
+            Ya no quedan cupos disponibles.
           </div>
+        ) : (
+          <form onSubmit={handleAnotarse} className="grid gap-4 mt-6">
+            <input
+              value={persona.nombre}
+              onChange={(e) =>
+                setPersona({ ...persona, nombre: e.target.value })
+              }
+              placeholder="Nombre y apellido"
+              className="px-4 py-3 rounded-xl border border-[#e2e8f0] outline-none focus:border-[#4f8fe8]"
+              required
+            />
 
-          <input
-            type="email"
-            value={form.email}
-            onChange={(e) =>
-              setForm({ ...form, email: e.target.value })
-            }
-            placeholder="Mail"
-            required
-            className="px-4 py-3 rounded-xl border border-[#e2e8f0] outline-none focus:border-[#4f8fe8]"
-          />
+            <input
+              value={persona.telefono}
+              onChange={(e) =>
+                setPersona({ ...persona, telefono: e.target.value })
+              }
+              placeholder="Teléfono"
+              className="px-4 py-3 rounded-xl border border-[#e2e8f0] outline-none focus:border-[#4f8fe8]"
+              required
+            />
 
-          <input
-            value={form.phone}
-            onChange={(e) =>
-              setForm({ ...form, phone: e.target.value })
-            }
-            placeholder="Número de teléfono"
-            required
-            className="px-4 py-3 rounded-xl border border-[#e2e8f0] outline-none focus:border-[#4f8fe8]"
-          />
+            <input
+              type="email"
+              value={persona.email}
+              onChange={(e) =>
+                setPersona({ ...persona, email: e.target.value })
+              }
+              placeholder="Email"
+              className="px-4 py-3 rounded-xl border border-[#e2e8f0] outline-none focus:border-[#4f8fe8]"
+              required
+            />
 
-          <button
-            disabled={players.length >= Number(savedEvent.spots)}
-            className={`w-full px-7 py-3 rounded-xl text-sm font-semibold shadow-lg transition-all ${
-              players.length >= Number(savedEvent.spots)
-                ? "bg-[#cbd5e1] text-white cursor-not-allowed"
-                : "bg-[#315b96] text-white hover:bg-[#254979]"
-            }`}
-          >
-            {players.length >= Number(savedEvent.spots)
-              ? "Cupos completos"
-              : "Anotarme"}
-          </button>
-
-        </form>
-
-      </section>
-
+            <button className="w-full py-3 rounded-xl bg-[#315b96] text-white font-semibold hover:bg-[#254979] transition-all">
+              Anotarme
+            </button>
+          </form>
+        )}
+      </div>
     </div>
   );
 }

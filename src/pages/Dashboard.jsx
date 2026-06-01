@@ -5,7 +5,7 @@ import Canchas from "../components/dashboard/Canchas.jsx";
 import Ingresos from "../components/dashboard/Ingresos.jsx";
 import MiNegocio from "../components/dashboard/MiNegocio.jsx";
 import CrearEvento from "../components/dashboard/CrearEventos.jsx";
-
+import Abonos from "../components/dashboard/Abonos.jsx";
 const Dashboard = () => {
   const [tab, setTab] = useState("reservas");
 
@@ -19,11 +19,10 @@ const Dashboard = () => {
             {tab === "negocio" && "Mi negocio"}
             {tab === "ingresos" && "Ingresos"}
             {tab === "crear-evento" && "Crear Evento"}
+            {tab === "abonos" && "Abonos"}
           </h1>
 
-          <span className="bg-white/20 px-4 py-1 rounded-full">
-            Dueño
-          </span>
+          
         </div>
 
         <div className="flex gap-10 px-8 py-4 border-b overflow-x-auto">
@@ -56,6 +55,12 @@ const Dashboard = () => {
             active={tab === "crear-evento"}
             onClick={() => setTab("crear-evento")}
           />
+
+          <Tab
+            label="Abonos"
+            active={tab === "abonos"}
+            onClick={() => setTab("abonos")}
+          />
         </div>
 
         {tab === "reservas" && <Reservas />}
@@ -63,6 +68,7 @@ const Dashboard = () => {
         {tab === "negocio" && <MiNegocio />}
         {tab === "ingresos" && <Ingresos />}
         {tab === "crear-evento" && <CrearEvento />}
+        {tab === "abonos" && <Abonos />}
       </div>
     </div>
   );
