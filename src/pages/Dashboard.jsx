@@ -10,10 +10,10 @@ const Dashboard = () => {
   const [tab, setTab] = useState("reservas");
 
   return (
-    <div className="relative min-h-screen w-full bg-gradient-to-br from-[#f8fbff] to-[#eef5ff] p-6 font-['Inter',sans-serif] overflow-hidden">
+    <div className="relative min-h-screen w-full bg-gradient-to-br from-[#f8fbff] to-[#eef5ff] p-3 sm:p-6 font-['Inter',sans-serif] overflow-hidden">
       <div className="relative w-full min-h-[calc(100vh-48px)] bg-white/80 backdrop-blur-md rounded-2xl overflow-hidden border border-[#e3ecf7] shadow-sm">
-        <div className="bg-[#315b96] text-white px-8 py-5 flex justify-between items-center">
-          <h1 className="text-2xl font-bold">
+       <div className="bg-[#315b96] text-white px-4 sm:px-8 py-4 sm:py-5 flex justify-between items-center gap-3">
+        <h1 className="text-xl sm:text-2xl font-bold">
             {tab === "reservas" && "Panel de administración"}
             {tab === "canchas" && "Canchas"}
             {tab === "negocio" && "Mi negocio"}
@@ -26,7 +26,7 @@ const Dashboard = () => {
           </span>
         </div>
 
-        <div className="flex gap-10 px-8 py-4 border-b overflow-x-auto">
+        <div className="flex gap-6 sm:gap-10 px-4 sm:px-8 py-4 border-b overflow-x-auto whitespace-nowrap">
           <Tab
             label="Reservas"
             active={tab === "reservas"}

@@ -1,5 +1,5 @@
 const Reservas = () => {
-    const reservas = [
+  const reservas = [
     {
       id: 44,
       cliente: "Martín López",
@@ -9,7 +9,6 @@ const Reservas = () => {
       horario: "08:00 - 09:00",
       estado: "Pagado",
     },
-  
     {
       id: 45,
       cliente: "Luisa Pérez",
@@ -19,7 +18,6 @@ const Reservas = () => {
       horario: "09:00 - 10:00",
       estado: "Señado",
     },
-  
     {
       id: 46,
       cliente: "Carlos Ríos",
@@ -29,7 +27,6 @@ const Reservas = () => {
       horario: "10:00 - 11:00",
       estado: "Pagado",
     },
-  
     {
       id: 47,
       cliente: "Ana García",
@@ -42,63 +39,66 @@ const Reservas = () => {
   ];
 
   return (
-    <>
+    <div className="p-4 sm:p-8">
+      <h2 className="text-2xl font-bold mb-6">
+        Reservas de hoy
+      </h2>
 
-      <div className="p-8">
-        <h2 className="text-2xl font-bold mb-6">Reservas de hoy</h2>
-
-        <table className="w-full text-left">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[850px] text-left">
           <thead>
             <tr className="text-[#64748b] text-sm border-b border-[#e3ecf7]">
               <th className="py-3">#</th>
               <th>Cliente</th>
-                <th>Contacto</th>
-                <th>Cancha</th>
-                <th>Día</th>
-                <th>Horario</th>
-                <th>Pago</th>
+              <th>Contacto</th>
+              <th>Cancha</th>
+              <th>Día</th>
+              <th>Horario</th>
+              <th>Pago</th>
               <th></th>
             </tr>
           </thead>
 
           <tbody>
             {reservas.map((r) => (
-              <ReservaRow key={r.id} reserva={r} />
+              <ReservaRow
+                key={r.id}
+                reserva={r}
+              />
             ))}
           </tbody>
         </table>
       </div>
-    </>
+    </div>
   );
 };
-
 const ReservaRow = ({ reserva }) => {
-    const styles = {
-      Pagado: "bg-green-100 text-green-700",
-      Señado: "bg-orange-100 text-orange-700",
-      Pendiente: "bg-[#edf4ff] text-[#5b7db1]",
-    };
-  
-    return (
-      <tr className="border-b border-[#eef2f7] text-[#0f172a]">
-        <td className="py-5 font-bold text-gray-400">#{reserva.id}</td>
-        <td className="font-semibold">{reserva.cliente}</td>
-        <td>{reserva.contacto}</td>
-        <td>{reserva.cancha}</td>
-        <td>{reserva.dia}</td>
-        <td className="font-semibold">{reserva.horario}</td>
-        <td>
-          <span className={`px-3 py-1 rounded-full text-xs font-bold ${styles[reserva.estado]}`}>
-            {reserva.estado}
-          </span>
-        </td>
-        <td>
-          <button className="border border-gray-100 rounded-xl px-4 py-2 text-gray-200">
-            ⋮
-          </button>
-        </td>
-      </tr>
-    );
+  const styles = {
+    Pagado: "bg-green-100 text-green-700",
+    Señado: "bg-orange-100 text-orange-700",
+    Pendiente: "bg-[#edf4ff] text-[#5b7db1]",
   };
+
+  return (
+    <tr className="border-b border-[#eef2f7] text-[#0f172a]">
+      <td className="py-5 font-bold text-[#94a3b8]">#{reserva.id}</td>
+      <td className="font-semibold">{reserva.cliente}</td>
+      <td>{reserva.contacto}</td>
+      <td>{reserva.cancha}</td>
+      <td>{reserva.dia}</td>
+      <td className="font-semibold">{reserva.horario}</td>
+      <td>
+        <span className={`px-3 py-1 rounded-full text-xs font-bold ${styles[reserva.estado]}`}>
+          {reserva.estado}
+        </span>
+      </td>
+      <td>
+        <button className="border border-[#e3ecf7] rounded-xl px-4 py-2 text-[#94a3b8]">
+          ⋮
+        </button>
+      </td>
+    </tr>
+  );
+};
 
 export default Reservas;
