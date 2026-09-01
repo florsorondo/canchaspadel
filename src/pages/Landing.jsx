@@ -1,5 +1,5 @@
 import React from "react";
-import LOGOAZULPADEL from "../assets/LOGOAZULPADEL.png";
+import LOGODISTRITO from "../assets/LOGODISTRITO.png";
 import DIBUJOAZUL from "../assets/DIBUJOAZUL.png";
 import FOTOFONDO from "../assets/FOTOFONDO.png";
 import fotochicos from "../assets/fotochicos.png";
@@ -52,7 +52,7 @@ function Nav() {
       <div className="max-w-[1280px] mx-auto px-10 md:px-12 h-[120px] flex items-center justify-between">
         <a href="#" className="flex items-center gap-3">
           <img
-            src={LOGOAZULPADEL}
+            src={LOGODISTRITO}
             alt="Distrito San Vicente Padel"
             className="w-20 h-20 rounded-full bg-white object-cover"
           />
@@ -86,7 +86,6 @@ function Nav() {
   );
 }
 
-
 function Hero() {
   return (
     <section className="relative pt-14 pb-16 overflow-hidden">
@@ -116,7 +115,7 @@ function Hero() {
           <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#ECEBE7] border border-[#011142] mb-8">
             <span className="w-2.5 h-2.5 rounded-full bg-[#011142]" />
             <span className="text-[10px] font-mono font-bold text-[#011142] uppercase tracking-[0.25em]">
-              San Vicente, Buenos Aires
+              Itaurralde 251, San Vicente
             </span>
           </div>
 
@@ -314,3 +313,4 @@ function Footer() {
     </footer>
   );
 }
+
