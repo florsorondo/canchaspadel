@@ -1,81 +1,114 @@
-import React, { useState } from "react";
+import { useState } from "react";
+import { useCourtAvailability } from "../../hooks/useCourtAvailability";
 
-const currentDate = new Date();
-
-const year = currentDate.getFullYear();
-const month = currentDate.getMonth();
-
-const monthName = currentDate.toLocaleString("es-AR", {
-  month: "long",
-});
-
-const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-const blockedDays = [12, 18, 25];
-
-const days = Array.from({ length: daysInMonth }, (_, i) => ({
-  day: i + 1,
-  disabled: blockedDays.includes(i + 1),
-}));
-
-const times = [
-  { start: "08:00", end: "09:30" },
-  { start: "09:30", end: "11:00" },
-  { start: "11:00", end: "12:30" },
-  { start: "12:30", end: "14:00", disabled: true },
-  { start: "14:00", end: "15:30" },
-  { start: "15:30", end: "17:00" },
-  { start: "17:00", end: "18:30", disabled: true },
-  { start: "18:30", end: "20:00" },
-  { start: "20:00", end: "21:30" },
-  { start: "21:30", end: "23:00" },
-  { start: "22:00", end: "23:30" },
+const DIAS_SEMANA_POR_INDICE = [
+  "domingo",
+  "lunes",
+  "martes",
+  "miercoles",
+  "jueves",
+  "viernes",
+  "sabado",
 ];
 
-export default function Step2({ setStep }) {
-  const [selectedDay, setSelectedDay] = useState(9);
-  const [selectedTime, setSelectedTime] = useState(times[1]);
+const toISODate = (year, month, day) =>
+  `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
+export default function Step2({ booking, updateBooking, setStep }) {
+  const court = booking.court;
+
+  const today = new Date();
+  const [monthOffset, setMonthOffset] = useState(0);
+
+  const viewDate = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const monthName = viewDate.toLocaleString("es-AR", { month: "long" });
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  const [selectedDate, setSelectedDate] = useState(booking.date || null);
+  const [selectedTime, setSelectedTime] = useState(booking.time || null);
+
+  const { hours, loading: loadingHours } = useCourtAvailability(
+    court?.id,
+    selectedDate
+  );
+
+  const days = Array.from({ length: daysInMonth }, (_, i) => {
+    const day = i + 1;
+    const dateISO = toISODate(year, month, day);
+    const dateObj = new Date(year, month, day);
+    const weekday = DIAS_SEMANA_POR_INDICE[dateObj.getDay()];
+    const disabled =
+      dateObj < startOfToday || !(court?.available_days || []).includes(weekday);
+
+    return { day, dateISO, disabled };
+  });
+
+  const handleSelectDay = (dateISO) => {
+    setSelectedDate(dateISO);
+    setSelectedTime(null);
+  };
+
+  const handleNext = () => {
+    if (!selectedDate || !selectedTime) return;
+    updateBooking({ date: selectedDate, time: selectedTime });
+    setStep(3);
+  };
 
   return (
-    <div className="relative min-h-screen w-full bg-gradient-to-br from-[#f8fbff] to-[#eef5ff] font-['Inter',sans-serif] overflow-hidden">
-      <div className="absolute top-0 right-0 w-96 h-96 bg-blue-200/20 blur-3xl rounded-full" />
-      <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-300/10 blur-3xl rounded-full" />
-
+    <div className="relative min-h-screen w-full bg-[#F5F1E9] text-[#06122B] overflow-hidden">
       <div className="relative min-h-screen w-full flex flex-col">
-        <header className="sticky top-0 z-50 w-full px-5 sm:px-8 py-4 border-b border-[#e3ecf7] bg-white/75 backdrop-blur-md flex items-center gap-3">
+        <header className="sticky top-0 z-50 w-full px-5 sm:px-8 py-4 border-b border-[#D6D0C8] bg-[#F5F1E9]/90 backdrop-blur-md flex items-center gap-3">
           <button
             onClick={() => setStep(1)}
-            className="w-9 h-9 rounded-lg border border-[#d7e3f3] bg-white text-[#315b96] hover:bg-[#eef5ff] transition"
+            className="w-9 h-9 rounded-sm border border-[#D6D0C8] bg-white text-[#06122B] hover:border-[#06122B] transition"
           >
             ←
           </button>
 
           <div>
-            <h1 className="text-lg sm:text-xl font-semibold text-[#0f172a]">
-              Fecha y horario
-            </h1>
-            <p className="text-xs sm:text-sm text-[#64748b]">
-              Los turnos son de 1 hora y 30 minutos
+            <p className="text-[10px] uppercase tracking-[0.3em] text-[#CD9A50] font-semibold">
+              {court?.name}
             </p>
+            <h1 className="text-lg sm:text-xl font-black">Fecha y horario</h1>
           </div>
         </header>
 
         <main className="flex-1 w-full px-5 sm:px-8 py-6 sm:py-8">
-          <section className="bg-white/80 backdrop-blur-md border border-[#e3ecf7] rounded-2xl shadow-sm p-4 sm:p-6">
-            <div className="mb-6">
-              <h2 className="text-xl sm:text-2xl font-semibold text-[#0f172a] capitalize">
-                {monthName} {year}
-              </h2>
-              <p className="text-sm text-[#64748b] mt-1">
-                Elegí una fecha disponible.
-              </p>
+          <section className="bg-white border border-[#D6D0C8] rounded-lg p-4 sm:p-6">
+            <div className="flex items-center justify-between mb-6">
+              <button
+                onClick={() => setMonthOffset((m) => Math.max(m - 1, 0))}
+                disabled={monthOffset === 0}
+                className="w-9 h-9 rounded-sm border border-[#D6D0C8] bg-white text-[#06122B] hover:border-[#06122B] transition disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                ‹
+              </button>
+
+              <div className="text-center">
+                <h2 className="text-xl sm:text-2xl font-black capitalize">
+                  {monthName} {year}
+                </h2>
+                <p className="text-sm text-[#6D7580] font-serif italic mt-1">
+                  Elegí una fecha disponible.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setMonthOffset((m) => m + 1)}
+                className="w-9 h-9 rounded-sm border border-[#D6D0C8] bg-white text-[#06122B] hover:border-[#06122B] transition"
+              >
+                ›
+              </button>
             </div>
 
             <div className="grid grid-cols-7 gap-2 sm:gap-3 mb-3">
               {["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"].map((day) => (
                 <div
                   key={day}
-                  className="text-center text-xs font-semibold text-[#94a3b8]"
+                  className="text-center text-xs font-bold uppercase tracking-wide text-[#6D7580]"
                 >
                   {day}
                 </div>
@@ -87,13 +120,13 @@ export default function Step2({ setStep }) {
                 <button
                   key={item.day}
                   disabled={item.disabled}
-                  onClick={() => setSelectedDay(item.day)}
-                  className={`h-14 sm:h-20 rounded-xl text-sm font-medium transition-all duration-300 ${
+                  onClick={() => handleSelectDay(item.dateISO)}
+                  className={`h-14 sm:h-20 rounded-sm text-sm font-semibold transition-all duration-300 ${
                     item.disabled
-                      ? "bg-[#f1f5f9] text-[#cbd5e1] cursor-not-allowed line-through"
-                      : selectedDay === item.day
-                      ? "bg-[#315b96] text-white shadow-md ring-2 ring-[#4f8fe8]/20 scale-[1.02]"
-                      : "bg-[#f8fafc] text-[#0f172a] border border-[#e2e8f0] hover:border-[#9ec5f0] hover:shadow-md hover:-translate-y-1"
+                      ? "bg-[#F5F1E9] text-[#D6D0C8] cursor-not-allowed line-through"
+                      : selectedDate === item.dateISO
+                      ? "bg-[#06122B] text-white shadow-md scale-[1.02]"
+                      : "bg-[#F5F1E9] text-[#06122B] border border-[#D6D0C8] hover:border-[#CD9A50] hover:shadow-md hover:-translate-y-0.5"
                   }`}
                 >
                   {item.day}
@@ -102,46 +135,56 @@ export default function Step2({ setStep }) {
             </div>
           </section>
 
-          <section className="mt-5 bg-white/80 backdrop-blur-md border border-[#e3ecf7] rounded-2xl shadow-sm p-4 sm:p-6">
-            <div className="mb-4">
-              <h2 className="text-lg sm:text-xl font-semibold text-[#0f172a] capitalize">
-                Turnos — {selectedDay} de {monthName}
-              </h2>
-              <p className="text-sm text-[#64748b] mt-1">
-                Cada turno dura 1:30 hs. Último turno hasta las 23:30.
-              </p>
-            </div>
+          {selectedDate && (
+            <section className="mt-5 bg-white border border-[#D6D0C8] rounded-lg p-4 sm:p-6">
+              <div className="mb-4">
+                <h2 className="text-lg sm:text-xl font-black">Turnos disponibles</h2>
+                <p className="text-sm text-[#6D7580] mt-1">
+                  Elegí un horario para tu reserva.
+                </p>
+              </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {times.map((item) => (
-                <button
-                  key={`${item.start}-${item.end}`}
-                  disabled={item.disabled}
-                  onClick={() => setSelectedTime(item)}
-                  className={`py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${
-                    item.disabled
-                      ? "bg-[#f1f5f9] text-[#cbd5e1] cursor-not-allowed line-through"
-                      : selectedTime.start === item.start
-                      ? "bg-[#315b96] text-white shadow-md ring-2 ring-[#4f8fe8]/20"
-                      : "bg-white text-[#0f172a] border border-[#e2e8f0] hover:border-[#9ec5f0] hover:shadow-md hover:-translate-y-1"
-                  }`}
-                >
-                  {item.start} - {item.end}
-                </button>
-              ))}
-            </div>
-          </section>
+              {loadingHours ? (
+                <p className="text-[#6D7580]">Cargando horarios...</p>
+              ) : hours.length === 0 ? (
+                <p className="text-[#6D7580]">
+                  Esta cancha no tiene turnos configurados para este día.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {hours.map((item) => (
+                    <button
+                      key={item.hour}
+                      disabled={item.taken}
+                      onClick={() => setSelectedTime(item.hour)}
+                      className={`py-3 rounded-sm text-sm font-semibold transition-all duration-300 ${
+                        item.taken
+                          ? "bg-[#F5F1E9] text-[#D6D0C8] cursor-not-allowed line-through"
+                          : selectedTime === item.hour
+                          ? "bg-[#06122B] text-white shadow-md"
+                          : "bg-white text-[#06122B] border border-[#D6D0C8] hover:border-[#CD9A50] hover:shadow-md hover:-translate-y-0.5"
+                      }`}
+                    >
+                      {item.hour}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </main>
 
-        <footer className="w-full px-5 sm:px-8 py-4 border-t border-[#e3ecf7] bg-white/80 backdrop-blur-md shadow-[0_-2px_10px_rgba(0,0,0,0.03)] flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-          <p className="text-sm text-[#64748b] capitalize">
-            {selectedDay} de {monthName} · {selectedTime.start} -{" "}
-            {selectedTime.end}
+        <footer className="w-full px-5 sm:px-8 py-4 border-t border-[#D6D0C8] bg-[#F5F1E9]/90 backdrop-blur-md flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+          <p className="text-sm text-[#6D7580]">
+            {selectedDate && selectedTime
+              ? `${selectedDate} · ${selectedTime}`
+              : "Elegí día y horario"}
           </p>
 
           <button
-            onClick={() => setStep(3)}
-            className="w-full sm:w-auto px-7 py-3 rounded-xl bg-[#315b96] text-white text-sm font-semibold shadow-lg hover:bg-[#254979] hover:shadow-xl transition-all"
+            disabled={!selectedDate || !selectedTime}
+            onClick={handleNext}
+            className="w-full sm:w-auto px-7 py-3 rounded-sm bg-[#06122B] text-[#F5F1E9] text-[13px] font-extrabold uppercase tracking-[0.16em] hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Siguiente →
           </button>

@@ -1,43 +1,34 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import LOGOAZULPADEL from "../assets/LOGOAZULPADEL.png";
 import DIBUJOAZUL from "../assets/DIBUJOAZUL.png";
 import FOTOFONDO from "../assets/FOTOFONDO.png";
 import fotochicos from "../assets/fotochicos.png";
-import cancha1 from "../assets/cancha1.png";
-import cancha2 from "../assets/cancha2.png";
+import { useCourts } from "../hooks/useCourts";
+import { useEvents } from "../hooks/useEvents";
 
 const NAV = [
   { href: "#canchas", label: "Canchas" },
+  { href: "#eventos", label: "Cancha libre" },
   { href: "#nosotros", label: "El Club" },
 ];
 
-const COURTS = [
-  {
-    name: "Cancha 1 — Central",
-    type: "Techada · Iluminada · WPT",
-    price: "$8.000",
-    status: "Disponible",
-    statusTone: "live",
-    image: cancha1,
-  },
-  {
-    name: "Cancha 2 — Sur",
-    type: "Al aire libre · Panorámica",
-    price: "$6.500",
-    status: "Próxima 18:00",
-    statusTone: "soon",
-    image: cancha2,
-  },
-];
+const DEFAULT_ARENA_ID = import.meta.env.VITE_DEFAULT_ARENA_ID;
 
 export default function Landing() {
+  const { courts, loadingCourts } = useCourts(DEFAULT_ARENA_ID);
+  const { events } = useEvents(DEFAULT_ARENA_ID);
+
+  const courtsDisponibles = courts.filter((c) => c.available);
+
   return (
     <div className="min-h-screen bg-[#F5F1E9] text-[#06122B] font-display">
       <Nav />
 
       <main>
-        <Hero />
-        <Courts />
+        <Hero courtsCount={courtsDisponibles.length} />
+        <Courts courts={courtsDisponibles} loading={loadingCourts} />
+        <Events events={events} />
         <About />
       </main>
 
@@ -74,12 +65,21 @@ function Nav() {
             </a>
           ))}
 
-          <a
-            href="#contacto"
-            className="px-7 py-3 bg-[#06122B] text-[#F5F1E9] rounded-full hover:opacity-90 transition"
-          >
-            Reservar
-          </a>
+          {DEFAULT_ARENA_ID ? (
+            <Link
+              to={`/booking/${DEFAULT_ARENA_ID}`}
+              className="px-7 py-3 bg-[#06122B] text-[#F5F1E9] rounded-full hover:opacity-90 transition"
+            >
+              Reservar
+            </Link>
+          ) : (
+            <a
+              href="#contacto"
+              className="px-7 py-3 bg-[#06122B] text-[#F5F1E9] rounded-full hover:opacity-90 transition"
+            >
+              Reservar
+            </a>
+          )}
         </div>
       </div>
     </nav>
@@ -87,7 +87,7 @@ function Nav() {
 }
 
 
-function Hero() {
+function Hero({ courtsCount }) {
   return (
     <section className="relative pt-14 pb-16 overflow-hidden">
       <div className="absolute inset-0 z-0">
@@ -135,16 +135,25 @@ function Hero() {
           </p>
 
           <div className="flex flex-wrap gap-4 items-center mb-14">
-            <a
-              href="#contacto"
-              className="min-w-[220px] h-[58px] px-8 border border-[#D6D0C8] text-[#06122B] font-extrabold uppercase tracking-[0.22em] text-[13px] rounded-[4px] flex items-center justify-center hover:border-[#06122B] transition text-white/80"
-            >
-              Reservar ahora <span>→</span>
-            </a>
+            {DEFAULT_ARENA_ID ? (
+              <Link
+                to={`/booking/${DEFAULT_ARENA_ID}`}
+                className="min-w-[220px] h-[58px] px-8 bg-[#CD9A50] text-[#06122B] font-extrabold uppercase tracking-[0.22em] text-[13px] rounded-[4px] flex items-center justify-center gap-2 hover:opacity-90 transition"
+              >
+                Reservar ahora <span>→</span>
+              </Link>
+            ) : (
+              <a
+                href="#contacto"
+                className="min-w-[220px] h-[58px] px-8 bg-[#CD9A50] text-[#06122B] font-extrabold uppercase tracking-[0.22em] text-[13px] rounded-[4px] flex items-center justify-center gap-2 hover:opacity-90 transition"
+              >
+                Reservar ahora <span>→</span>
+              </a>
+            )}
 
             <a
               href="#canchas"
-              className="min-w-[220px] h-[58px] px-8 border border-[#D6D0C8] text-[#06122B] font-extrabold uppercase tracking-[0.22em] text-[13px] rounded-[4px] flex items-center justify-center hover:border-[#06122B] transition text-white/80"
+              className="min-w-[220px] h-[58px] px-8 border border-white/30 text-white font-extrabold uppercase tracking-[0.22em] text-[13px] rounded-[4px] flex items-center justify-center hover:border-white transition"
             >
               Ver canchas
             </a>
@@ -152,17 +161,24 @@ function Hero() {
         </div>
         
 
-        <InfoBar />
+        <InfoBar courtsCount={courtsCount} />
       </div>
     </section>
   );
 }
 
-function InfoBar() {
+function InfoBar({ courtsCount }) {
   const items = [
     { n: "01", label: "Horario", value: "07:00 — 23:00 todos los días" },
     { n: "02", label: "Whatsapp", value: "+54 9 2214 55-6677" },
-    { n: "03", label: "Canchas", value: "4 disponibles hoy" },
+    {
+      n: "03",
+      label: "Canchas",
+      value:
+        courtsCount > 0
+          ? `${courtsCount} disponible${courtsCount === 1 ? "" : "s"} hoy`
+          : "Consultá disponibilidad",
+    },
   ];
 
   return (
@@ -202,7 +218,7 @@ function ImagePlaceholder({ src, alt, className }) {
   );
 }
 
-function Courts() {
+function Courts({ courts, loading }) {
   return (
     <section id="canchas" className="py-20 bg-[#06122B]">
       <div className="max-w-[1280px] mx-auto px-6 md:px-12">
@@ -210,50 +226,86 @@ function Courts() {
           <h2 className="text-[#F5F1E9] text-[42px] md:text-[58px] font-black tracking-tight">
             NUESTRAS CANCHAS
           </h2>
-
-          
         </div>
 
-        <div className="grid md:grid-cols-2 gap-10">
-          {COURTS.map((c) => (
-            <article key={c.name} className="group">
-              <div className="relative w-full aspect-[4/3] overflow-hidden bg-white/5">
-                <ImagePlaceholder
-                  src={c.image}
-                  alt={c.name}
-                  className="w-full h-full object-cover transition-all duration-700 group-hover:scale-105"
-                />
-
-                <span className="absolute top-5 left-5 inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#F5F1E9] text-[#06122B] text-[10px] font-mono font-bold uppercase tracking-widest">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      c.statusTone === "live"
-                        ? "bg-green-500"
-                        : "bg-[#CD9A50]"
-                    }`}
+        {loading ? (
+          <p className="text-[#F5F1E9]/60">Cargando canchas...</p>
+        ) : courts.length === 0 ? (
+          <p className="text-[#F5F1E9]/60">
+            Todavía no hay canchas cargadas.
+          </p>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-10">
+            {courts.map((c) => (
+              <article key={c.id} className="group">
+                <div className="relative w-full aspect-[4/3] overflow-hidden bg-white/5">
+                  <ImagePlaceholder
+                    src={c.image_url}
+                    alt={c.name}
+                    className="w-full h-full object-cover transition-all duration-700 group-hover:scale-105"
                   />
-                  {c.status}
-                </span>
-              </div>
 
-              <div className="flex justify-between items-start gap-4 mt-5">
-                <div>
-                  <h3 className="text-[#F5F1E9] text-xl font-bold mb-2">
-                    {c.name}
-                  </h3>
-                  <p className="text-[#F5F1E9]/50 text-[11px] uppercase tracking-widest">
-                    {c.type}
-                  </p>
+                  <span className="absolute top-5 left-5 inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#F5F1E9] text-[#06122B] text-[10px] font-mono font-bold uppercase tracking-widest">
+                    <span className="w-2 h-2 rounded-full bg-green-500" />
+                    Disponible
+                  </span>
                 </div>
 
-                <div className="text-right shrink-0">
-                  <p className="text-[#CD9A50] font-mono text-lg">{c.price}</p>
-                  <p className="text-[#F5F1E9]/40 text-[10px] uppercase">
-                    por hora
-                  </p>
+                <div className="flex justify-between items-start gap-4 mt-5">
+                  <div>
+                    <h3 className="text-[#F5F1E9] text-xl font-bold mb-2">
+                      {c.name}
+                    </h3>
+                    <p className="text-[#F5F1E9]/50 text-[11px] uppercase tracking-widest">
+                      {c.description || "Cancha de pádel"}
+                    </p>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <p className="text-[#CD9A50] font-mono text-lg">
+                      ${Number(c.price || 0).toLocaleString()}
+                    </p>
+                    <p className="text-[#F5F1E9]/40 text-[10px] uppercase">
+                      por hora
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </article>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function Events({ events }) {
+  if (!events || events.length === 0) return null;
+
+  return (
+    <section id="eventos" className="py-20 bg-[#F5F1E9]">
+      <div className="max-w-[1280px] mx-auto px-6 md:px-12">
+        <h2 className="text-[20px] font-bold font-mono text-[#CD9A50] uppercase tracking-[0.35em] mb-8">
+          Cancha libre
+        </h2>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          {events.map((ev) => (
+            <Link
+              key={ev.id}
+              to={`/cancha-libre/${ev.id}`}
+              className="block bg-white border border-[#DED8CE] rounded-lg p-6 hover:border-[#06122B] transition"
+            >
+              <h3 className="text-xl font-bold text-[#06122B]">
+                {ev.title}
+              </h3>
+              <p className="text-[#6D7580] mt-1">
+                {ev.date} · {ev.time}
+              </p>
+              <p className="text-[#CD9A50] font-mono mt-2">
+                ${Number(ev.price || 0).toLocaleString()} por persona
+              </p>
+            </Link>
           ))}
         </div>
       </div>
