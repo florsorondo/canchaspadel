@@ -2,11 +2,9 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    match /court-photos/{arenaId}/{allPaths=**} {
+    match /court-photos/{allPaths=**} {
       allow read: if true;
-      // Solo el dueño de la arena puede subir fotos a su carpeta
       allow write: if request.auth != null
-        && firestore.get(/databases/(default)/documents/arena/$(arenaId)).data.auth_id == request.auth.uid
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
     }
