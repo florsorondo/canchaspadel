@@ -3,18 +3,13 @@ import { useArena } from "../../hooks/useArena";
 import { useBookings } from "../../hooks/useBookings";
 import { useCourts } from "../../hooks/useCourts";
 import { getCourtNameById } from "../../utils/courts";
-import { ASSIGNABLE_STATUSES, STATUS_LABELS, STATUS_STYLES } from "../../utils/bookingStatus";
+import {
+  ASSIGNABLE_STATUSES,
+  STATUS_LABELS,
+  STATUS_STYLES,
+  montoCobrado,
+} from "../../utils/bookingStatus";
 import Loader from "../Loader";
-
-const montoCobrado = (booking) => {
-  if (booking.status === "paid" || booking.status === "completed") {
-    return booking.amount || 0;
-  }
-  if (booking.status === "deposit_paid") {
-    return booking.deposit_amount || 0;
-  }
-  return 0;
-};
 
 const inicioDeSemana = (hoy) => {
   const dia = hoy.getDay();
@@ -78,7 +73,7 @@ const Ingresos = () => {
   }
 
   const hoy = new Date();
-  const hoyISO = hoy.toISOString().slice(0, 10);
+  const hoyISO = hoy.toLocaleDateString("en-CA");
   const inicioSemana = inicioDeSemana(hoy);
 
   const cobrados = bookings.filter(

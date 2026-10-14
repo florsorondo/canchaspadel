@@ -16,7 +16,8 @@ const PAGOS_MANUAL = [
   { value: "mercado_pago", label: "Mercado Pago" },
 ];
 
-const hoyISO = () => new Date().toISOString().slice(0, 10);
+// Fecha local (no UTC: después de las 21 hs en Argentina UTC ya es el día siguiente)
+const hoyISO = () => new Date().toLocaleDateString("en-CA");
 
 const Reservas = () => {
   const { arenaId, loadingArena } = useArena();
@@ -48,8 +49,7 @@ const Reservas = () => {
       .filter((b) => {
         if (filtro === "hoy") return b.date === hoy;
         if (filtro === "proximas") return b.date > hoy;
-        if (filtro === "historial") return b.date < hoy;
-        return true;
+        return b.date < hoy;
       })
       .filter((b) => (estadoFiltro === "todos" ? true : b.status === estadoFiltro))
       .filter((b) => {
@@ -116,7 +116,6 @@ const Reservas = () => {
           { value: "hoy", label: "Hoy" },
           { value: "proximas", label: "Próximas" },
           { value: "historial", label: "Historial" },
-          { value: "todas", label: "Todas" },
         ].map((f) => (
           <button
             key={f.value}

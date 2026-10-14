@@ -26,3 +26,14 @@ export const ASSIGNABLE_STATUSES = [
   "completed",
   "cancelled",
 ];
+
+// Lo efectivamente cobrado de una reserva según su estado
+export const montoCobrado = (booking) => {
+  if (booking.status === "paid" || booking.status === "completed") {
+    return booking.amount || 0;
+  }
+  if (booking.status === "deposit_paid") {
+    return booking.deposit_amount || 0;
+  }
+  return 0;
+};

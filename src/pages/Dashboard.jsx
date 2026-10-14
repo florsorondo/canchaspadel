@@ -6,6 +6,7 @@ import Ingresos from "../components/dashboard/Ingresos.jsx";
 import MiNegocio from "../components/dashboard/MiNegocio.jsx";
 import CrearEvento from "../components/dashboard/CrearEventos.jsx";
 import Cupones from "../components/dashboard/Cupones.jsx";
+import Clientes from "../components/dashboard/Clientes.jsx";
 import { auth } from "../firebase.js";
 import { useNavigate } from "react-router-dom";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -53,6 +54,7 @@ const Dashboard = () => {
                 {tab === "ingresos" && "Ingresos"}
                 {tab === "crear-evento" && "Cancha libre"}
                 {tab === "cupones" && "Cupones"}
+                {tab === "clientes" && "Clientes"}
               </h1>
             </div>
 
@@ -75,6 +77,12 @@ const Dashboard = () => {
               label="Reservas"
               active={tab === "reservas"}
               onClick={() => setTab("reservas")}
+            />
+
+            <Tab
+              label="Clientes"
+              active={tab === "clientes"}
+              onClick={() => setTab("clientes")}
             />
 
             <Tab
@@ -115,6 +123,7 @@ const Dashboard = () => {
             {tab === "ingresos" && <Ingresos />}
             {tab === "crear-evento" && <CrearEvento />}
             {tab === "cupones" && <Cupones />}
+            {tab === "clientes" && <Clientes />}
           </div>
         </div>
       </div>
