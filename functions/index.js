@@ -1420,23 +1420,36 @@ app.delete("/courts/:courtId", verifyAuth, verifyArenaOwner, async (req, res) =>
 
 app.post("/events", verifyAuth, verifyArenaOwner, async (req, res) => {
   try {
-    const { arena_id, court_id, title, date, time, spots, price } = req.body;
+    const { arena_id, court_id, title, date, time, end_time, spots, price } = req.body;
 
-    if (!arena_id || !court_id || !title || !date || !time || !spots) {
+    // Turnos que ocupa la cancha libre (si no mandan "times", es un solo turno)
+    const times = Array.isArray(req.body.times) && req.body.times.length > 0
+      ? [...new Set(req.body.times)].sort()
+      : [time];
+
+    if (!arena_id || !court_id || !title || !date || !times[0] || !spots) {
       return res.status(400).json({
         message: "Faltan campos obligatorios",
       });
     }
 
     const eventId = await db.runTransaction(async (transaction) => {
-      const { taken } = await getSlotState(transaction, {
-        courtId: court_id,
-        date,
-        time,
-      });
+      const takenTimes = [];
 
-      if (taken) {
-        throw new Error("Horario no disponible");
+      for (const slotTime of times) {
+        const { taken } = await getSlotState(transaction, {
+          courtId: court_id,
+          date,
+          time: slotTime,
+        });
+
+        if (taken) takenTimes.push(slotTime);
+      }
+
+      if (takenTimes.length > 0) {
+        const error = new Error(`Horario no disponible: ${takenTimes.join(", ")}`);
+        error.isSlotTaken = true;
+        throw error;
       }
 
       const eventRef = db.collection("events").doc();
@@ -1446,33 +1459,35 @@ app.post("/events", verifyAuth, verifyArenaOwner, async (req, res) => {
         court_id,
         title,
         date,
-        time,
+        time: times[0],
+        end_time: end_time || null,
+        times,
         spots: Number(spots) || 0,
         price: Number(price) || 0,
         status: "active",
         created_at: FieldValue.serverTimestamp(),
       });
 
-      const blockRef = db.collection("bookings").doc();
-
-      transaction.set(blockRef, {
-        arena_id,
-        court_id,
-        date,
-        time,
-        customer_name: `Cancha libre: ${title}`,
-        customer_email: "",
-        customer_phone: "",
-        amount: 0,
-        deposit_amount: 0,
-        payment_option: null,
-        coupon_code: null,
-        reason: title,
-        event_id: eventRef.id,
-        status: "blocked",
-        source: "event",
-        created_by: req.uid,
-        created_at: FieldValue.serverTimestamp(),
+      times.forEach((slotTime) => {
+        transaction.set(db.collection("bookings").doc(), {
+          arena_id,
+          court_id,
+          date,
+          time: slotTime,
+          customer_name: `Cancha libre: ${title}`,
+          customer_email: "",
+          customer_phone: "",
+          amount: 0,
+          deposit_amount: 0,
+          payment_option: null,
+          coupon_code: null,
+          reason: title,
+          event_id: eventRef.id,
+          status: "blocked",
+          source: "event",
+          created_by: req.uid,
+          created_at: FieldValue.serverTimestamp(),
+        });
       });
 
       return eventRef.id;
@@ -1485,8 +1500,8 @@ app.post("/events", verifyAuth, verifyArenaOwner, async (req, res) => {
   } catch (error) {
     console.error(error);
 
-    if (error.message === "Horario no disponible") {
-      return res.status(400).json({ message: "Horario no disponible" });
+    if (error.isSlotTaken) {
+      return res.status(400).json({ message: error.message });
     }
 
     return res.status(500).json({

@@ -7,20 +7,31 @@ import { getCourtNameById } from "../../utils/courts";
 import { PrimaryButton } from "./shared";
 import Loader from "../Loader";
 
+const aMinutos = (hora) => {
+  const [h, m] = hora.split(":").map(Number);
+  return h * 60 + m;
+};
+
+const aHora = (minutos) =>
+  `${String(Math.floor(minutos / 60)).padStart(2, "0")}:${String(minutos % 60).padStart(2, "0")}`;
+
+const EVENTO_VACIO = {
+  title: "Cancha libre",
+  court_id: "",
+  date: "",
+  time: "",
+  end_time: "",
+  spots: 8,
+  price: "",
+};
+
 export default function CrearEvento() {
   const { arenaId, loadingArena } = useArena();
   const { courts, loadingCourts } = useCourts(arenaId);
   const { events, creating, createEvent, fetchRegistrations, cancelEvent } =
     useEvents(arenaId);
 
-  const [event, setEvent] = useState({
-    title: "Cancha libre",
-    court_id: "",
-    date: "",
-    time: "",
-    spots: 8,
-    price: "",
-  });
+  const [event, setEvent] = useState(EVENTO_VACIO);
 
   const [eventoAbierto, setEventoAbierto] = useState(null);
   const [registrantes, setRegistrantes] = useState({});
@@ -32,6 +43,38 @@ export default function CrearEvento() {
     fetchAvailability,
   } = useCourtAvailability(event.court_id, event.date);
 
+  const turnosOrdenados = [...turnos].sort((a, b) => a.hour.localeCompare(b.hour));
+
+  // Duración de un turno: la menor distancia entre dos turnos seguidos (60 min si hay uno solo)
+  const duracionTurno = turnosOrdenados.reduce((min, turno, i) => {
+    if (i === 0) return min;
+    const diff = aMinutos(turno.hour) - aMinutos(turnosOrdenados[i - 1].hour);
+    return diff > 0 ? Math.min(min, diff) : min;
+  }, Infinity);
+  const duracion = Number.isFinite(duracionTurno) ? duracionTurno : 60;
+
+  const turnosEnRango = (desde, hasta) =>
+    turnosOrdenados.filter((t) => t.hour >= desde && t.hour < hasta);
+
+  // "Hasta": cualquier inicio de turno posterior, o el final del último turno
+  const opcionesHasta = event.time
+    ? [
+        ...turnosOrdenados.map((t) => t.hour),
+        turnosOrdenados.length
+          ? aHora(aMinutos(turnosOrdenados[turnosOrdenados.length - 1].hour) + duracion)
+          : null,
+      ]
+        .filter((hora) => hora && hora > event.time)
+        .filter((hora, i, arr) => arr.indexOf(hora) === i)
+        .map((hora) => ({
+          hora,
+          bloqueada: turnosEnRango(event.time, hora).some((t) => t.taken),
+        }))
+    : [];
+
+  const turnosSeleccionados =
+    event.time && event.end_time ? turnosEnRango(event.time, event.end_time) : [];
+
   const handleCreateEvent = async (e) => {
     e.preventDefault();
 
@@ -40,12 +83,15 @@ export default function CrearEvento() {
       return;
     }
 
-    if (!event.date || !event.time) {
-      alert("Elegí la fecha y el horario");
+    if (!event.date || !event.time || !event.end_time) {
+      alert("Elegí la fecha y el horario (desde y hasta)");
       return;
     }
 
-    const result = await createEvent(event);
+    const result = await createEvent({
+      ...event,
+      times: turnosSeleccionados.map((t) => t.hour),
+    });
 
     if (!result.success) {
       alert(result.error);
@@ -57,7 +103,7 @@ export default function CrearEvento() {
 
     alert(`Evento creado. Link generado: ${window.location.origin}${link}`);
 
-    setEvent({ title: "Cancha libre", court_id: "", date: "", time: "", spots: 8, price: "" });
+    setEvent(EVENTO_VACIO);
   };
 
   const toggleRegistrantes = async (eventId) => {
@@ -114,7 +160,7 @@ export default function CrearEvento() {
 
           <select
             value={event.court_id}
-            onChange={(e) => setEvent({ ...event, court_id: e.target.value, time: "" })}
+            onChange={(e) => setEvent({ ...event, court_id: e.target.value, time: "", end_time: "" })}
             className="px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B]"
           >
             <option value="">Elegí una cancha</option>
@@ -125,39 +171,72 @@ export default function CrearEvento() {
             ))}
           </select>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input
-              type="date"
-              value={event.date}
-              onChange={(e) => setEvent({ ...event, date: e.target.value, time: "" })}
-              className="px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B]"
-            />
+          <input
+            type="date"
+            value={event.date}
+            onChange={(e) => setEvent({ ...event, date: e.target.value, time: "", end_time: "" })}
+            className="px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B]"
+          />
 
-            <select
-              value={event.time}
-              onChange={(e) => setEvent({ ...event, time: e.target.value })}
-              disabled={!event.court_id || !event.date || cargandoTurnos}
-              className="px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B] disabled:opacity-60"
-            >
-              <option value="">
-                {!event.court_id || !event.date
-                  ? "Elegí cancha y fecha"
-                  : cargandoTurnos
-                    ? "Cargando turnos..."
-                    : turnos.length === 0
-                      ? "Sin turnos ese día"
-                      : "Elegí un horario"}
-              </option>
-              {[...turnos]
-                .sort((a, b) => a.hour.localeCompare(b.hour))
-                .map((turno) => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label>
+              <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-[#06122B] mb-2">
+                Desde
+              </p>
+              <select
+                value={event.time}
+                onChange={(e) => setEvent({ ...event, time: e.target.value, end_time: "" })}
+                disabled={!event.court_id || !event.date || cargandoTurnos}
+                className="w-full px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B] disabled:opacity-60"
+              >
+                <option value="">
+                  {!event.court_id || !event.date
+                    ? "Elegí cancha y fecha"
+                    : cargandoTurnos
+                      ? "Cargando turnos..."
+                      : turnos.length === 0
+                        ? "Sin turnos ese día"
+                        : "Elegí un horario"}
+                </option>
+                {turnosOrdenados.map((turno) => (
                   <option key={turno.hour} value={turno.hour} disabled={turno.taken}>
                     {turno.hour}
                     {turno.taken ? " · ocupado" : ""}
                   </option>
                 ))}
-            </select>
+              </select>
+            </label>
+
+            <label>
+              <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-[#06122B] mb-2">
+                Hasta
+              </p>
+              <select
+                value={event.end_time}
+                onChange={(e) => setEvent({ ...event, end_time: e.target.value })}
+                disabled={!event.time}
+                className="w-full px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B] disabled:opacity-60"
+              >
+                <option value="">{event.time ? "Elegí hasta qué hora" : "Elegí primero desde"}</option>
+                {opcionesHasta.map(({ hora, bloqueada }) => (
+                  <option key={hora} value={hora} disabled={bloqueada}>
+                    {hora}
+                    {bloqueada ? " · hay turnos ocupados" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
+
+          {turnosSeleccionados.length > 0 && (
+            <p className="text-sm text-[#6D7580]">
+              Se van a bloquear {turnosSeleccionados.length}{" "}
+              {turnosSeleccionados.length === 1 ? "turno" : "turnos"}:{" "}
+              <span className="font-semibold text-[#06122B]">
+                {turnosSeleccionados.map((t) => t.hour).join(" · ")}
+              </span>
+            </p>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input
@@ -203,7 +282,7 @@ export default function CrearEvento() {
                   >
                     <p className="font-semibold text-[#06122B]">{ev.title}</p>
                     <p className="text-sm text-[#6D7580]">
-                      {getCourtNameById(courts, ev.court_id)} · {ev.date} · {ev.time}
+                      {getCourtNameById(courts, ev.court_id)} · {ev.date} · {ev.time}{ev.end_time ? ` a ${ev.end_time}` : ""}
                     </p>
                     <p className="text-xs text-[#CD9A50] font-semibold mt-1">
                       {eventoAbierto === ev.id ? "Ocultar anotados ▲" : "Ver anotados ▼"}

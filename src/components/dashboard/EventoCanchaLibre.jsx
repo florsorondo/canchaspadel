@@ -66,7 +66,7 @@ export default function EventoCanchaLibre() {
           <h2 className="font-bold text-[#06122B]">{event.title}</h2>
 
           <p className="text-sm text-[#6D7580] mt-1">
-            {event.date} · {event.time}
+            {event.date} · {event.time}{event.end_time ? ` a ${event.end_time}` : ""}
           </p>
 
           <p className="text-sm font-bold text-[#CD9A50] mt-2">

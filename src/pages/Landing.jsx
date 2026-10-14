@@ -300,7 +300,7 @@ function Events({ events }) {
                 {ev.title}
               </h3>
               <p className="text-[#6D7580] mt-1">
-                {ev.date} · {ev.time}
+                {ev.date} · {ev.time}{ev.end_time ? ` a ${ev.end_time}` : ""}
               </p>
               <p className="text-[#CD9A50] font-mono mt-2">
                 ${Number(ev.price || 0).toLocaleString()} por persona

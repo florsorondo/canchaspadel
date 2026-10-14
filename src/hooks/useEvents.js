@@ -35,7 +35,7 @@ export function useEvents(arenaId) {
     fetchEvents();
   }, [fetchEvents]);
 
-  const createEvent = async ({ court_id, title, date, time, spots, price }) => {
+  const createEvent = async ({ court_id, title, date, time, end_time, times, spots, price }) => {
     if (!arenaId) {
       return { success: false, error: "No se encontró la arena" };
     }
@@ -53,6 +53,8 @@ export function useEvents(arenaId) {
           title,
           date,
           time,
+          end_time,
+          times,
           spots,
           price,
         }),
