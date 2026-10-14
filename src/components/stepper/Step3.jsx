@@ -98,6 +98,12 @@ export default function Step3({ arena, arenaId, booking, updateBooking, setStep 
       const data = await res.json();
 
       if (!res.ok) {
+        if (data.coupon_error) {
+          setCoupon(null);
+          setCouponError(data.message);
+          throw new Error(`${data.message}. Quitá el cupón o probá con otro.`);
+        }
+
         throw new Error(data.message || "No se pudo crear la reserva");
       }
 
@@ -179,7 +185,11 @@ export default function Step3({ arena, arenaId, booking, updateBooking, setStep 
               <div className="flex gap-2">
                 <input
                   value={couponInput}
-                  onChange={(e) => setCouponInput(e.target.value)}
+                  onChange={(e) => {
+                    setCouponInput(e.target.value);
+                    setCoupon(null);
+                    setCouponError(null);
+                  }}
                   placeholder="Código"
                   className="flex-1 px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B] uppercase tracking-[0.08em]"
                 />

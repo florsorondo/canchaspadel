@@ -199,33 +199,47 @@ const reserveSlot = async (transaction, { arenaId, courtId, date, time }) => {
 
 const normalizeCouponCode = (code) => String(code || "").trim().toUpperCase();
 
-const isCouponWithinWindow = (coupon) => {
-  const today = new Date().toISOString().slice(0, 10);
+// Devuelve el motivo por el que el cupón no se puede usar, o null si es válido
+const getCouponError = (coupon) => {
+  if (!coupon) return "Cupón inválido";
+  if (!coupon.active) return "Este cupón no está activo";
 
-  if (coupon.valid_from && today < coupon.valid_from) return false;
-  if (coupon.valid_to && today > coupon.valid_to) return false;
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+  });
 
-  return true;
+  if (coupon.valid_from && today < coupon.valid_from) {
+    return "Este cupón todavía no está vigente";
+  }
+  if (coupon.valid_to && today > coupon.valid_to) return "Cupón vencido";
+
+  return null;
 };
 
-const findActiveCoupon = async (transaction, arenaId, code) => {
-  const normalizedCode = normalizeCouponCode(code);
-  if (!normalizedCode) return null;
-
-  const query = db
+const couponQuery = (arenaId, code) =>
+  db
     .collection("coupons")
     .where("arena_id", "==", arenaId)
-    .where("code", "==", normalizedCode)
-    .where("active", "==", true)
+    .where("code", "==", normalizeCouponCode(code))
     .limit(1);
 
-  const snapshot = await transaction.get(query);
+const findValidCoupon = async (transaction, arenaId, code) => {
+  if (!normalizeCouponCode(code)) return null;
 
-  if (snapshot.empty) return null;
+  const snapshot = await transaction.get(couponQuery(arenaId, code));
+  const coupon = snapshot.empty
+    ? null
+    : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
 
-  const coupon = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+  const couponError = getCouponError(coupon);
 
-  return isCouponWithinWindow(coupon) ? coupon : null;
+  if (couponError) {
+    const error = new Error(couponError);
+    error.isCouponError = true;
+    throw error;
+  }
+
+  return coupon;
 };
 
 const applyCouponDiscount = (amount, coupon) => {
@@ -764,6 +778,14 @@ app.post("/coupons", verifyAuth, verifyArenaOwner, async (req, res) => {
       });
     }
 
+    const existing = await couponQuery(body.arena_id, body.code).get();
+
+    if (!existing.empty) {
+      return res.status(409).json({
+        message: "Ya existe un cupón con ese código",
+      });
+    }
+
     const couponRef = await db.collection("coupons").add({
       arena_id: body.arena_id,
       code: normalizeCouponCode(body.code),
@@ -824,24 +846,15 @@ app.post("/arena/:arenaId/coupons/validate", async (req, res) => {
       return res.status(404).json({ message: "Cancha no encontrada" });
     }
 
-    const normalizedCode = normalizeCouponCode(code);
+    const snapshot = await couponQuery(arenaId, code).get();
+    const coupon = snapshot.empty
+      ? null
+      : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
 
-    const snapshot = await db
-      .collection("coupons")
-      .where("arena_id", "==", arenaId)
-      .where("code", "==", normalizedCode)
-      .where("active", "==", true)
-      .limit(1)
-      .get();
+    const couponError = getCouponError(coupon);
 
-    if (snapshot.empty) {
-      return res.status(404).json({ valid: false, message: "Cupón inválido" });
-    }
-
-    const coupon = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
-
-    if (!isCouponWithinWindow(coupon)) {
-      return res.status(404).json({ valid: false, message: "Cupón vencido" });
+    if (couponError) {
+      return res.status(400).json({ valid: false, message: couponError });
     }
 
     const amount = Number(courtDoc.data().price) || 0;
@@ -965,7 +978,7 @@ app.post("/bookings", async (req, res) => {
       );
 
       const basePrice = Number(courtSnap.data().price) || 0;
-      const coupon = await findActiveCoupon(transaction, arena_id, coupon_code);
+      const coupon = await findValidCoupon(transaction, arena_id, coupon_code);
       const amount = applyCouponDiscount(basePrice, coupon);
 
       let depositAmount = 0;
@@ -1068,6 +1081,13 @@ app.post("/bookings", async (req, res) => {
     if (error.message === "Cancha no encontrada") {
       return res.status(404).json({
         message: "Cancha no encontrada",
+      });
+    }
+
+    if (error.isCouponError) {
+      return res.status(400).json({
+        message: error.message,
+        coupon_error: true,
       });
     }
 

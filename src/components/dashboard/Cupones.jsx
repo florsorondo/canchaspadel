@@ -20,9 +20,17 @@ const Cupones = () => {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
-  if (loadingArena || loading) {
+  if (loadingArena || (loading && coupons.length === 0)) {
     return <Loader />;
   }
+
+  const handleToggle = async (coupon) => {
+    const result = await toggleCoupon(coupon.id, !coupon.active);
+
+    if (!result.success) {
+      alert(result.error);
+    }
+  };
 
   const handleCrear = async (e) => {
     e.preventDefault();
@@ -95,8 +103,9 @@ const Cupones = () => {
                 <button
                   type="button"
                   disabled={saving}
-                  onClick={() => toggleCoupon(coupon.id, !coupon.active)}
-                  className={`w-14 h-7 rounded-full p-1 transition ${
+                  onClick={() => handleToggle(coupon)}
+                  aria-label={coupon.active ? "Desactivar cupón" : "Activar cupón"}
+                  className={`w-14 h-7 rounded-full p-1 transition disabled:opacity-60 ${
                     coupon.active ? "bg-[#06122B]" : "bg-[#D6D0C8]"
                   }`}
                 >
