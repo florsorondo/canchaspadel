@@ -161,30 +161,42 @@ export default function CrearEvento() {
             className="px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B]"
           />
 
-          <select
-            value={event.court_id}
-            onChange={(e) => setEvent({ ...event, court_id: e.target.value, time: "", end_time: "" })}
-            className="px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B]"
-          >
-            <option value="">Elegí una cancha</option>
-            {courts.map((court) => (
-              <option key={court.id} value={court.id}>
-                {court.name}
-              </option>
-            ))}
-          </select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label>
+              <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-[#06122B] mb-2">
+              1. Cancha
+            </p>
+              <select
+                value={event.court_id}
+                onChange={(e) => setEvent({ ...event, court_id: e.target.value, time: "", end_time: "" })}
+                className="w-full px-4 py-3 rounded-sm border border-[#D6D0C8] bg-white outline-none focus:border-[#06122B]"
+              >
+                <option value="">Elegí una cancha</option>
+                {courts.map((court) => (
+                  <option key={court.id} value={court.id}>
+                    {court.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <input
-            type="date"
-            value={event.date}
-            onChange={(e) => setEvent({ ...event, date: e.target.value, time: "", end_time: "" })}
-            className="px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B]"
-          />
+            <label>
+              <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-[#06122B] mb-2">
+              2. Fecha
+            </p>
+              <input
+                type="date"
+                value={event.date}
+                onChange={(e) => setEvent({ ...event, date: e.target.value, time: "", end_time: "" })}
+                className="w-full px-4 py-3 rounded-sm border border-[#D6D0C8] bg-white outline-none focus:border-[#06122B]"
+              />
+            </label>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label>
               <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-[#06122B] mb-2">
-                Desde
+                3. Desde
               </p>
               <select
                 value={event.time}
@@ -194,7 +206,7 @@ export default function CrearEvento() {
               >
                 <option value="">
                   {!event.court_id || !event.date
-                    ? "Elegí cancha y fecha"
+                    ? "Primero elegí cancha y fecha"
                     : cargandoTurnos
                       ? "Cargando turnos..."
                       : turnos.length === 0
@@ -212,7 +224,7 @@ export default function CrearEvento() {
 
             <label>
               <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-[#06122B] mb-2">
-                Hasta
+                4. Hasta
               </p>
               <select
                 value={event.end_time}
