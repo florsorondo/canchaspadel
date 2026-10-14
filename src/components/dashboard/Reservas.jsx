@@ -6,6 +6,7 @@ import { useCourts } from "../../hooks/useCourts";
 import { Modal, PrimaryButton, SecondaryButton } from "./shared";
 import { ASSIGNABLE_STATUSES, STATUS_LABELS, STATUS_STYLES } from "../../utils/bookingStatus";
 import Loader from "../Loader";
+import LinkReservas from "./LinkReservas";
 
 const PAGOS_MANUAL = [
   { value: "efectivo", label: "Efectivo" },
@@ -107,6 +108,8 @@ const Reservas = () => {
           </SecondaryButton>
         </div>
       </div>
+
+      <LinkReservas arenaId={arenaId} />
 
       <div className="flex flex-wrap gap-2 mb-4">
         {[
