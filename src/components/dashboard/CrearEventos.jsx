@@ -43,6 +43,9 @@ export default function CrearEvento() {
     fetchAvailability,
   } = useCourtAvailability(event.court_id, event.date);
 
+  const canchaElegida = courts.find((c) => c.id === event.court_id);
+  const diasCancha = canchaElegida?.available_days?.join(", ");
+
   const turnosOrdenados = [...turnos].sort((a, b) => a.hour.localeCompare(b.hour));
 
   // Duración de un turno: la menor distancia entre dos turnos seguidos (60 min si hay uno solo)
@@ -227,6 +230,13 @@ export default function CrearEvento() {
               </select>
             </label>
           </div>
+
+          {event.court_id && event.date && !cargandoTurnos && turnos.length === 0 && (
+            <p className="text-sm text-red-500 font-medium">
+              {canchaElegida?.name || "Esta cancha"} no tiene turnos ese día.
+              {diasCancha ? ` Abre: ${diasCancha}.` : ""}
+            </p>
+          )}
 
           {turnosSeleccionados.length > 0 && (
             <p className="text-sm text-[#6D7580]">
