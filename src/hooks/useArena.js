@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { createContext, createElement, useCallback, useContext, useEffect, useState } from "react";
 import { getAuth } from "firebase/auth";
 import { authFetch } from "../utils/authFetch";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
-export function useArena() {
+const ArenaContext = createContext(null);
+
+function useArenaState() {
   const [arena, setArena] = useState(null);
   const [arenaId, setArenaId] = useState(null);
   const [loadingArena, setLoadingArena] = useState(true);
@@ -86,4 +88,20 @@ export function useArena() {
     fetchArena,
     updateArena,
   };
+}
+
+// Carga el complejo una sola vez y lo comparte con todas las pestañas del panel
+export function ArenaProvider({ children }) {
+  const value = useArenaState();
+  return createElement(ArenaContext.Provider, { value }, children);
+}
+
+export function useArena() {
+  const context = useContext(ArenaContext);
+
+  if (!context) {
+    throw new Error("useArena tiene que usarse dentro de <ArenaProvider>");
+  }
+
+  return context;
 }
