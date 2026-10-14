@@ -3,6 +3,7 @@ const admin = require("firebase-admin");
 const express = require("express");
 const cors = require("cors");
 const { FieldValue } = require("firebase-admin/firestore");
+const { MercadoPagoConfig, Preference, Payment } = require("mercadopago");
 admin.initializeApp();
 
 const db = admin.firestore();
@@ -12,9 +13,281 @@ const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json());
 
+const mpClient = new MercadoPagoConfig({
+  accessToken: process.env.MP_ACCESS_TOKEN,
+});
+const preferenceClient = new Preference(mpClient);
+const paymentClient = new Payment(mpClient);
+
+const FUNCTIONS_BASE_URL =
+  process.env.FUNCTIONS_BASE_URL ||
+  "https://us-central1-arenasanvicente.cloudfunctions.net/api";
+const FRONTEND_BASE_URL =
+  process.env.FRONTEND_BASE_URL || "http://localhost:5173";
+const PENDING_EXPIRY_MINUTES =
+  Number(process.env.BOOKING_PENDING_EXPIRY_MINUTES) || 30;
+const PENDING_EXPIRY_MS = PENDING_EXPIRY_MINUTES * 60 * 1000;
+
+const DIAS_SEMANA_POR_INDICE = [
+  "domingo",
+  "lunes",
+  "martes",
+  "miercoles",
+  "jueves",
+  "viernes",
+  "sabado",
+];
+
+const getDayOfWeek = (dateStr) => {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const dateObj = new Date(year, month - 1, day);
+  return DIAS_SEMANA_POR_INDICE[dateObj.getDay()];
+};
+
+const regenerateCourtDates = async (courtId, arenaId, availableDays, availableHours) => {
+  const existingSnapshot = await db
+    .collection("court_dates")
+    .where("field_id", "==", courtId)
+    .get();
+
+  const batch = db.batch();
+
+  existingSnapshot.docs.forEach((doc) => batch.delete(doc.ref));
+
+  availableDays.forEach((day) => {
+    availableHours.forEach((hour) => {
+      const courtDateRef = db.collection("court_dates").doc();
+
+      batch.set(courtDateRef, {
+        field_id: courtId,
+        arena_id: arenaId,
+        day,
+        hour,
+        enabled: true,
+        created_at: FieldValue.serverTimestamp(),
+      });
+    });
+  });
+
+  await batch.commit();
+};
+
+const isBookingBlocking = (bookingData, now = Date.now()) => {
+  if (bookingData.status === "cancelled") return false;
+
+  if (
+    bookingData.status === "pending" &&
+    bookingData.created_at &&
+    now - bookingData.created_at.toMillis() > PENDING_EXPIRY_MS
+  ) {
+    return false;
+  }
+
+  return true;
+};
+
+/* ======================================================
+   AUTH MIDDLEWARE
+====================================================== */
+
+const verifyAuth = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization || "";
+    const match = authHeader.match(/^Bearer (.+)$/);
+
+    if (!match) {
+      return res.status(401).json({ message: "No autenticado" });
+    }
+
+    const decoded = await admin.auth().verifyIdToken(match[1]);
+    req.uid = decoded.uid;
+
+    return next();
+  } catch (error) {
+    return res.status(401).json({ message: "Token inválido" });
+  }
+};
+
+const resolveArenaId = async (req) => {
+  if (req.params.arenaId) return req.params.arenaId;
+  if (req.body?.arena_id) return req.body.arena_id;
+
+  const lookups = [
+    ["courtId", "courts"],
+    ["paymentMethodId", "payment_methods"],
+    ["couponId", "coupons"],
+    ["eventId", "events"],
+    ["bookingId", "bookings"],
+  ];
+
+  for (const [param, collection] of lookups) {
+    if (req.params[param]) {
+      const doc = await db.collection(collection).doc(req.params[param]).get();
+      return doc.exists ? doc.data().arena_id : null;
+    }
+  }
+
+  return null;
+};
+
+const verifyArenaOwner = async (req, res, next) => {
+  try {
+    const arenaId = await resolveArenaId(req);
+
+    if (!arenaId) {
+      return res.status(404).json({ message: "Recurso no encontrado" });
+    }
+
+    const arenaDoc = await db.collection("arena").doc(arenaId).get();
+
+    if (!arenaDoc.exists || arenaDoc.data().auth_id !== req.uid) {
+      return res.status(403).json({ message: "No autorizado" });
+    }
+
+    req.arenaId = arenaId;
+
+    return next();
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error de autorización" });
+  }
+};
+
+/* ======================================================
+   BOOKING / COUPON HELPERS
+====================================================== */
+
+// Revisa TODAS las reservas del turno (puede haber canceladas y activas a la vez)
+const getSlotState = async (transaction, { courtId, date, time }) => {
+  const slotQuery = db
+    .collection("bookings")
+    .where("court_id", "==", courtId)
+    .where("date", "==", date)
+    .where("time", "==", time);
+
+  const slotSnap = await transaction.get(slotQuery);
+
+  const taken = slotSnap.docs.some((doc) => isBookingBlocking(doc.data()));
+  const staleBookingRefs = slotSnap.docs
+    .filter((doc) => doc.data().status === "pending" && !isBookingBlocking(doc.data()))
+    .map((doc) => doc.ref);
+
+  return { taken, staleBookingRefs };
+};
+
+const reserveSlot = async (transaction, { arenaId, courtId, date, time }) => {
+  const { taken, staleBookingRefs } = await getSlotState(transaction, {
+    courtId,
+    date,
+    time,
+  });
+
+  if (taken) {
+    throw new Error("Horario no disponible");
+  }
+
+  const dayBookingsQuery = db
+    .collection("bookings")
+    .where("arena_id", "==", arenaId)
+    .where("date", "==", date);
+
+  const dayBookings = await transaction.get(dayBookingsQuery);
+
+  const reservationNumber = dayBookings.size + 1;
+
+  const [year, month, day] = date.split("-");
+  const refId = `${day}-${month}-${year}-${reservationNumber}`;
+
+  return { staleBookingRefs, refId, reservationNumber };
+};
+
+const normalizeCouponCode = (code) => String(code || "").trim().toUpperCase();
+
+// Devuelve el motivo por el que el cupón no se puede usar, o null si es válido
+const getCouponError = (coupon) => {
+  if (!coupon) return "Cupón inválido";
+  if (!coupon.active) return "Este cupón no está activo";
+
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+  });
+
+  if (coupon.valid_from && today < coupon.valid_from) {
+    return "Este cupón todavía no está vigente";
+  }
+  if (coupon.valid_to && today > coupon.valid_to) return "Cupón vencido";
+
+  return null;
+};
+
+const couponQuery = (arenaId, code) =>
+  db
+    .collection("coupons")
+    .where("arena_id", "==", arenaId)
+    .where("code", "==", normalizeCouponCode(code))
+    .limit(1);
+
+const findValidCoupon = async (transaction, arenaId, code) => {
+  if (!normalizeCouponCode(code)) return null;
+
+  const snapshot = await transaction.get(couponQuery(arenaId, code));
+  const coupon = snapshot.empty
+    ? null
+    : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+
+  const couponError = getCouponError(coupon);
+
+  if (couponError) {
+    const error = new Error(couponError);
+    error.isCouponError = true;
+    throw error;
+  }
+
+  return coupon;
+};
+
+const applyCouponDiscount = (amount, coupon) => {
+  if (!coupon) return amount;
+
+  const discounted =
+    coupon.type === "percentage"
+      ? amount - (amount * Number(coupon.value || 0)) / 100
+      : amount - Number(coupon.value || 0);
+
+  return Math.max(Math.round(discounted), 0);
+};
+
 /* ======================================================
    GETS
 ====================================================== */
+app.get("/my-arena/:authId", verifyAuth, async (req, res) => {
+  try {
+    if (req.params.authId !== req.uid) {
+      return res.status(403).json({ message: "No autorizado" });
+    }
+
+    const snapshot = await db
+      .collection("arena")
+      .where("auth_id", "==", req.uid)
+      .limit(1)
+      .get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({ message: "Arena no encontrada" });
+    }
+
+    const doc = snapshot.docs[0];
+
+    return res.json({
+      id: doc.id,
+      ...doc.data(),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Error obteniendo arena",
+    });
+  }
+});
 
 app.get("/arena/:arenaId", async (req, res) => {
   try {
@@ -69,12 +342,17 @@ app.get("/arena/:arenaId/courts", async (req, res) => {
 app.get("/arena/:arenaId/payment-methods", async (req, res) => {
   try {
     const { arenaId } = req.params;
+    const includeUnavailable = req.query.all === "true";
 
-    const snapshot = await db
+    let query = db
       .collection("payment_methods")
-      .where("arena_id", "==", arenaId)
-      .where("available", "==", true)
-      .get();
+      .where("arena_id", "==", arenaId);
+
+    if (!includeUnavailable) {
+      query = query.where("available", "==", true);
+    }
+
+    const snapshot = await query.get();
 
     const methods = snapshot.docs.map((doc) => ({
       id: doc.id,
@@ -91,15 +369,18 @@ app.get("/arena/:arenaId/payment-methods", async (req, res) => {
   }
 });
 
-app.get("/arena/:arenaId/coupons", async (req, res) => {
+app.get("/arena/:arenaId/coupons", verifyAuth, verifyArenaOwner, async (req, res) => {
   try {
     const { arenaId } = req.params;
+    const includeInactive = req.query.all === "true";
 
-    const snapshot = await db
-      .collection("coupons")
-      .where("arena_id", "==", arenaId)
-      .where("active", "==", true)
-      .get();
+    let query = db.collection("coupons").where("arena_id", "==", arenaId);
+
+    if (!includeInactive) {
+      query = query.where("active", "==", true);
+    }
+
+    const snapshot = await query.get();
 
     const coupons = snapshot.docs.map((doc) => ({
       id: doc.id,
@@ -116,7 +397,7 @@ app.get("/arena/:arenaId/coupons", async (req, res) => {
   }
 });
 
-app.get("/arena/:arenaId/bookings", async (req, res) => {
+app.get("/arena/:arenaId/bookings", verifyAuth, verifyArenaOwner, async (req, res) => {
   try {
     const { arenaId } = req.params;
 
@@ -136,6 +417,90 @@ app.get("/arena/:arenaId/bookings", async (req, res) => {
 
     return res.status(500).json({
       message: "Error interno",
+    });
+  }
+});
+
+app.get("/courts/:courtId/availability", async (req, res) => {
+  try {
+    const { courtId } = req.params;
+    const { date } = req.query;
+
+    if (!date) {
+      return res.status(400).json({
+        message: "Falta el parámetro date",
+      });
+    }
+
+    const courtDoc = await db.collection("courts").doc(courtId).get();
+
+    if (!courtDoc.exists) {
+      return res.status(404).json({
+        message: "Cancha no encontrada",
+      });
+    }
+
+    const dayOfWeek = getDayOfWeek(date);
+
+    const templateSnapshot = await db
+      .collection("court_dates")
+      .where("field_id", "==", courtId)
+      .where("day", "==", dayOfWeek)
+      .where("enabled", "==", true)
+      .get();
+
+    const hoursTemplate = templateSnapshot.docs.map((doc) => doc.data().hour);
+
+    const bookingsSnapshot = await db
+      .collection("bookings")
+      .where("court_id", "==", courtId)
+      .where("date", "==", date)
+      .get();
+
+    const now = Date.now();
+
+    const takenHours = new Set(
+      bookingsSnapshot.docs
+        .filter((doc) => isBookingBlocking(doc.data(), now))
+        .map((doc) => doc.data().time)
+    );
+
+    const hours = hoursTemplate.map((hour) => ({
+      hour,
+      taken: takenHours.has(hour),
+    }));
+
+    return res.json({ hours });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Error obteniendo disponibilidad",
+    });
+  }
+});
+
+app.get("/bookings/:bookingId", async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    const doc = await db.collection("bookings").doc(bookingId).get();
+
+    if (!doc.exists) {
+      return res.status(404).json({
+        message: "Reserva no encontrada",
+      });
+    }
+
+    return res.json({
+      id: doc.id,
+      ...doc.data(),
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Error obteniendo reserva",
     });
   }
 });
@@ -171,15 +536,27 @@ app.get("/courts/:courtId/dates", async (req, res) => {
    POST ARENA
 ====================================================== */
 
-app.post("/arena", async (req, res) => {
+app.post("/arena", verifyAuth, async (req, res) => {
   try {
     const body = req.body;
+
+    const existingSnapshot = await db
+      .collection("arena")
+      .where("auth_id", "==", req.uid)
+      .limit(1)
+      .get();
+
+    if (!existingSnapshot.empty) {
+      return res.status(409).json({
+        message: "Ya existe un complejo para este usuario",
+      });
+    }
 
     const arenaRef = await db.collection("arena").add({
       name: body.name,
       address: body.address,
       phone: body.phone,
-      auth_id: body.auth_id,
+      auth_id: req.uid,
       instagram: body.instagram || "",
       logo_url: body.logo_url || "",
       available: true,
@@ -199,11 +576,52 @@ app.post("/arena", async (req, res) => {
   }
 });
 
+app.patch("/arena/:arenaId", verifyAuth, verifyArenaOwner, async (req, res) => {
+  try {
+    const { arenaId } = req.params;
+    const {
+      name,
+      address,
+      phone,
+      instagram,
+      description,
+      opening_time,
+      closing_time,
+      days_open,
+      deposit_amount,
+    } = req.body;
+
+    await db.collection("arena").doc(arenaId).update({
+      name,
+      address,
+      phone,
+      instagram: instagram || "",
+      description: description || "",
+      opening_time: opening_time || "",
+      closing_time: closing_time || "",
+      days_open: Array.isArray(days_open) ? days_open : [],
+      deposit_amount: Number(deposit_amount) || 0,
+      updated_at: FieldValue.serverTimestamp(),
+    });
+
+    return res.json({
+      message: "Arena actualizada",
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Error actualizando arena",
+    });
+  }
+});
+
+
 /* ======================================================
    POST COURT
 ====================================================== */
 
-app.post("/courts", async (req, res) => {
+app.post("/courts", verifyAuth, verifyArenaOwner, async (req, res) => {
 
   try {
 
@@ -220,6 +638,10 @@ app.post("/courts", async (req, res) => {
       available_days,
 
       available_hours,
+
+      price,
+
+      image_url,
 
     } = body;
 
@@ -255,41 +677,17 @@ app.post("/courts", async (req, res) => {
 
       available_hours,
 
+      price: Number(price) || 0,
+
+      image_url: image_url || "",
+
       available: true,
 
       created_at: FieldValue.serverTimestamp(),
 
     });
 
-    const batch = db.batch();
-
-    available_days.forEach((day) => {
-
-      available_hours.forEach((hour) => {
-
-        const courtDateRef = db.collection("court_dates").doc();
-
-        batch.set(courtDateRef, {
-
-          field_id: courtRef.id,
-
-          arena_id,
-
-          day,
-
-          hour,
-
-          enabled: true,
-
-          created_at: FieldValue.serverTimestamp(),
-
-        });
-
-      });
-
-    });
-
-    await batch.commit();
+    await regenerateCourtDates(courtRef.id, arena_id, available_days, available_hours);
 
     return res.status(201).json({
 
@@ -317,7 +715,7 @@ app.post("/courts", async (req, res) => {
    POST PAYMENT METHOD
 ====================================================== */
 
-app.post("/payment-methods", async (req, res) => {
+app.post("/payment-methods", verifyAuth, verifyArenaOwner, async (req, res) => {
   try {
     const body = req.body;
 
@@ -344,19 +742,59 @@ app.post("/payment-methods", async (req, res) => {
   }
 });
 
+app.patch(
+  "/payment-methods/:paymentMethodId",
+  verifyAuth,
+  verifyArenaOwner,
+  async (req, res) => {
+  try {
+    const { paymentMethodId } = req.params;
+    const { available } = req.body;
+
+    await db.collection("payment_methods").doc(paymentMethodId).update({
+      available,
+      updated_at: FieldValue.serverTimestamp(),
+    });
+
+    return res.json({
+      message: "Metodo de pago actualizado",
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Error actualizando metodo de pago",
+    });
+  }
+});
+
 /* ======================================================
    POST COUPON
 ====================================================== */
 
-app.post("/coupons", async (req, res) => {
+app.post("/coupons", verifyAuth, verifyArenaOwner, async (req, res) => {
   try {
     const body = req.body;
 
+    if (!body.arena_id || !body.code || !body.type || !body.value) {
+      return res.status(400).json({
+        message: "Faltan campos obligatorios",
+      });
+    }
+
+    const existing = await couponQuery(body.arena_id, body.code).get();
+
+    if (!existing.empty) {
+      return res.status(409).json({
+        message: "Ya existe un cupón con ese código",
+      });
+    }
+
     const couponRef = await db.collection("coupons").add({
       arena_id: body.arena_id,
-      code: body.code,
+      code: normalizeCouponCode(body.code),
       type: body.type,
-      value: body.value,
+      value: Number(body.value) || 0,
       active: true,
       valid_from: body.valid_from || null,
       valid_to: body.valid_to || null,
@@ -376,6 +814,128 @@ app.post("/coupons", async (req, res) => {
   }
 });
 
+app.patch("/coupons/:couponId", verifyAuth, verifyArenaOwner, async (req, res) => {
+  try {
+    const { couponId } = req.params;
+    const { active, value, valid_from, valid_to } = req.body;
+
+    const updates = { updated_at: FieldValue.serverTimestamp() };
+
+    if (typeof active === "boolean") updates.active = active;
+    if (value !== undefined) updates.value = Number(value) || 0;
+    if (valid_from !== undefined) updates.valid_from = valid_from || null;
+    if (valid_to !== undefined) updates.valid_to = valid_to || null;
+
+    await db.collection("coupons").doc(couponId).update(updates);
+
+    return res.json({ message: "Cupón actualizado" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error actualizando cupón" });
+  }
+});
+
+app.post("/arena/:arenaId/coupons/validate", async (req, res) => {
+  try {
+    const { arenaId } = req.params;
+    const { code, court_id } = req.body;
+
+    if (!code || !court_id) {
+      return res.status(400).json({ message: "Faltan campos obligatorios" });
+    }
+
+    const courtDoc = await db.collection("courts").doc(court_id).get();
+
+    if (!courtDoc.exists) {
+      return res.status(404).json({ message: "Cancha no encontrada" });
+    }
+
+    const snapshot = await couponQuery(arenaId, code).get();
+    const coupon = snapshot.empty
+      ? null
+      : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+
+    const couponError = getCouponError(coupon);
+
+    if (couponError) {
+      return res.status(400).json({ valid: false, message: couponError });
+    }
+
+    const amount = Number(courtDoc.data().price) || 0;
+    const discountedAmount = applyCouponDiscount(amount, coupon);
+
+    return res.json({
+      valid: true,
+      code: coupon.code,
+      type: coupon.type,
+      value: coupon.value,
+      amount,
+      discounted_amount: discountedAmount,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error validando cupón" });
+  }
+});
+
+
+app.patch("/bookings/:bookingId", verifyAuth, verifyArenaOwner, async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({
+        message: "Status requerido",
+      });
+    }
+
+    await db.collection("bookings").doc(bookingId).update({
+      status,
+      updated_at: FieldValue.serverTimestamp(),
+    });
+
+    return res.json({
+      message: "Reserva actualizada",
+    });
+
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Error actualizando reserva",
+    });
+  }
+});
+
+app.post("/bookings/:bookingId/cancel", async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    const bookingRef = db.collection("bookings").doc(bookingId);
+    const bookingSnap = await bookingRef.get();
+
+    if (!bookingSnap.exists) {
+      return res.status(404).json({ message: "Reserva no encontrada" });
+    }
+
+    if (bookingSnap.data().status === "completed") {
+      return res.status(400).json({
+        message: "No se puede cancelar una reserva ya finalizada",
+      });
+    }
+
+    await bookingRef.update({
+      status: "cancelled",
+      updated_at: FieldValue.serverTimestamp(),
+    });
+
+    return res.json({ message: "Reserva cancelada" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error cancelando reserva" });
+  }
+});
 /* ======================================================
    POST BOOKING
 ====================================================== */
@@ -392,59 +952,762 @@ app.post("/bookings", async (req, res) => {
       customer_name,
       customer_email,
       customer_phone,
+      payment_option,
+      coupon_code,
     } = body;
 
-    // VALIDACIONES
-    if (
-      !arena_id ||
-      !court_id ||
-      !date ||
-      !time ||
-      !customer_name
-    ) {
+    if (!arena_id || !court_id || !date || !time || !customer_name) {
       return res.status(400).json({
         message: "Faltan campos obligatorios",
       });
     }
 
-    // VALIDAR SI YA EXISTE RESERVA
-    const existingBooking = await db
-      .collection("bookings")
-      .where("court_id", "==", court_id)
-      .where("date", "==", date)
-      .where("time", "==", time)
-      .limit(1)
-      .get();
+    if (payment_option && !["full", "deposit"].includes(payment_option)) {
+      return res.status(400).json({
+        message: "payment_option inválido",
+      });
+    }
 
-    if (!existingBooking.empty) {
+    const result = await db.runTransaction(async (transaction) => {
+      const courtRef = db.collection("courts").doc(court_id);
+      const courtSnap = await transaction.get(courtRef);
+
+      if (!courtSnap.exists) {
+        throw new Error("Cancha no encontrada");
+      }
+
+      const { staleBookingRefs, refId, reservationNumber } = await reserveSlot(
+        transaction,
+        { arenaId: arena_id, courtId: court_id, date, time }
+      );
+
+      const basePrice = Number(courtSnap.data().price) || 0;
+      const coupon = await findValidCoupon(transaction, arena_id, coupon_code);
+      const amount = applyCouponDiscount(basePrice, coupon);
+
+      let depositAmount = 0;
+
+      if (payment_option === "deposit") {
+        const arenaRef = db.collection("arena").doc(arena_id);
+        const arenaSnap = await transaction.get(arenaRef);
+        const configuredDeposit = Number(arenaSnap.data()?.deposit_amount) || 0;
+        depositAmount = Math.min(configuredDeposit, amount);
+      }
+
+      staleBookingRefs.forEach((staleRef) => {
+        transaction.update(staleRef, {
+          status: "cancelled",
+          updated_at: FieldValue.serverTimestamp(),
+        });
+      });
+
+      const bookingRef = db.collection("bookings").doc();
+
+      transaction.set(bookingRef, {
+        ref_id: refId,
+        reservation_number: reservationNumber,
+
+        arena_id,
+        court_id,
+        date,
+        time,
+        customer_name,
+        customer_email: customer_email || "",
+        customer_phone: customer_phone || "",
+
+        amount,
+        deposit_amount: depositAmount,
+        payment_option: payment_option || null,
+        coupon_code: coupon ? coupon.code : null,
+
+        status: "pending",
+        source: "online",
+        created_at: FieldValue.serverTimestamp(),
+      });
+
+      return {
+        booking_id: bookingRef.id,
+        ref_id: refId,
+        amount,
+        depositAmount,
+      };
+    });
+
+    let initPoint = null;
+
+    if (payment_option) {
+      const unitPrice =
+        payment_option === "deposit" ? result.depositAmount : result.amount;
+
+      const preference = await preferenceClient.create({
+        body: {
+          items: [
+            {
+              title: `Reserva ${result.ref_id}`,
+              quantity: 1,
+              unit_price: unitPrice,
+              currency_id: "ARS",
+            },
+          ],
+          external_reference: result.booking_id,
+          notification_url: `${FUNCTIONS_BASE_URL}/webhooks/mercadopago`,
+          back_urls: {
+            success: `${FRONTEND_BASE_URL}/booking/${arena_id}/confirmacion?booking_id=${result.booking_id}`,
+            pending: `${FRONTEND_BASE_URL}/booking/${arena_id}/confirmacion?booking_id=${result.booking_id}`,
+            failure: `${FRONTEND_BASE_URL}/booking/${arena_id}/confirmacion?booking_id=${result.booking_id}`,
+          },
+          auto_return: "approved",
+        },
+      });
+
+      await db.collection("bookings").doc(result.booking_id).update({
+        mp_preference_id: preference.id,
+      });
+
+      initPoint = preference.init_point;
+    }
+
+    return res.status(201).json({
+      message: "Reserva creada",
+      booking_id: result.booking_id,
+      ref_id: result.ref_id,
+      init_point: initPoint,
+    });
+  } catch (error) {
+    console.error(error);
+
+    if (error.message === "Horario no disponible") {
       return res.status(400).json({
         message: "Horario no disponible",
       });
     }
 
-    // CREAR RESERVA
-    const bookingRef = await db.collection("bookings").add({
-      arena_id,
-      court_id,
-      date,
-      time,
-      customer_name,
-      customer_email,
-      customer_phone,
-      status: "pending",
-      created_at: FieldValue.serverTimestamp(),
+    if (error.message === "Cancha no encontrada") {
+      return res.status(404).json({
+        message: "Cancha no encontrada",
+      });
+    }
+
+    if (error.isCouponError) {
+      return res.status(400).json({
+        message: error.message,
+        coupon_error: true,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Error creando reserva",
+    });
+  }
+});
+
+/* ======================================================
+   RESERVA MANUAL (ADMIN)
+====================================================== */
+
+app.post(
+  "/arena/:arenaId/bookings/manual",
+  verifyAuth,
+  verifyArenaOwner,
+  async (req, res) => {
+    try {
+      const { arenaId } = req.params;
+      const { court_id, date, time, customer_name, customer_phone, payment_method, mark_paid } =
+        req.body;
+
+      if (!court_id || !date || !time || !customer_name) {
+        return res.status(400).json({
+          message: "Faltan campos obligatorios",
+        });
+      }
+
+      const result = await db.runTransaction(async (transaction) => {
+        const courtRef = db.collection("courts").doc(court_id);
+        const courtSnap = await transaction.get(courtRef);
+
+        if (!courtSnap.exists) {
+          throw new Error("Cancha no encontrada");
+        }
+
+        const { staleBookingRefs, refId, reservationNumber } = await reserveSlot(
+          transaction,
+          { arenaId, courtId: court_id, date, time }
+        );
+
+        const amount = Number(courtSnap.data().price) || 0;
+
+        staleBookingRefs.forEach((staleRef) => {
+          transaction.update(staleRef, {
+            status: "cancelled",
+            updated_at: FieldValue.serverTimestamp(),
+          });
+        });
+
+        const bookingRef = db.collection("bookings").doc();
+
+        transaction.set(bookingRef, {
+          ref_id: refId,
+          reservation_number: reservationNumber,
+
+          arena_id: arenaId,
+          court_id,
+          date,
+          time,
+          customer_name,
+          customer_email: "",
+          customer_phone: customer_phone || "",
+
+          amount,
+          deposit_amount: 0,
+          payment_option: null,
+          coupon_code: null,
+          payment_method: payment_method || "efectivo",
+
+          status: mark_paid ? "paid" : "pending",
+          source: "manual",
+          created_by: req.uid,
+          created_at: FieldValue.serverTimestamp(),
+        });
+
+        return { booking_id: bookingRef.id, ref_id: refId };
+      });
+
+      return res.status(201).json({
+        message: "Reserva cargada",
+        booking_id: result.booking_id,
+        ref_id: result.ref_id,
+      });
+    } catch (error) {
+      console.error(error);
+
+      if (error.message === "Horario no disponible") {
+        return res.status(400).json({ message: "Horario no disponible" });
+      }
+
+      if (error.message === "Cancha no encontrada") {
+        return res.status(404).json({ message: "Cancha no encontrada" });
+      }
+
+      return res.status(500).json({ message: "Error creando reserva" });
+    }
+  }
+);
+
+/* ======================================================
+   BLOQUEO DE HORARIOS (TORNEOS, ETC.)
+====================================================== */
+
+app.post(
+  "/arena/:arenaId/blocks",
+  verifyAuth,
+  verifyArenaOwner,
+  async (req, res) => {
+    try {
+      const { arenaId } = req.params;
+      const { court_id, date, times, reason } = req.body;
+
+      if (!court_id || !date || !Array.isArray(times) || times.length === 0) {
+        return res.status(400).json({
+          message: "Faltan campos obligatorios",
+        });
+      }
+
+      const created = [];
+      const skipped = [];
+
+      for (const time of times) {
+        const blocked = await db.runTransaction(async (transaction) => {
+          const { taken } = await getSlotState(transaction, {
+            courtId: court_id,
+            date,
+            time,
+          });
+
+          if (taken) {
+            return false;
+          }
+
+          const blockRef = db.collection("bookings").doc();
+
+          transaction.set(blockRef, {
+            arena_id: arenaId,
+            court_id,
+            date,
+            time,
+            customer_name: reason?.trim() || "Horario bloqueado",
+            customer_email: "",
+            customer_phone: "",
+            amount: 0,
+            deposit_amount: 0,
+            payment_option: null,
+            coupon_code: null,
+            reason: reason?.trim() || "",
+            status: "blocked",
+            source: "block",
+            created_by: req.uid,
+            created_at: FieldValue.serverTimestamp(),
+          });
+
+          return true;
+        });
+
+        if (blocked) {
+          created.push(time);
+        } else {
+          skipped.push(time);
+        }
+      }
+
+      return res.status(201).json({
+        message: "Horarios bloqueados",
+        created,
+        skipped,
+      });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ message: "Error bloqueando horarios" });
+    }
+  }
+);
+
+app.delete("/bookings/:bookingId", verifyAuth, verifyArenaOwner, async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    await db.collection("bookings").doc(bookingId).delete();
+
+    return res.json({ message: "Reserva eliminada" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error eliminando reserva" });
+  }
+});
+
+/* ======================================================
+   MERCADO PAGO WEBHOOK
+====================================================== */
+
+app.post("/webhooks/mercadopago", async (req, res) => {
+  try {
+    const paymentId = req.query["data.id"] || req.body?.data?.id;
+    const topic = req.query.type || req.body?.type;
+
+    if (!paymentId || topic !== "payment") {
+      return res.sendStatus(200);
+    }
+
+    const payment = await paymentClient.get({ id: paymentId });
+    const bookingId = payment.external_reference;
+    const mpStatus = payment.status;
+
+    if (!bookingId) {
+      return res.sendStatus(200);
+    }
+
+    await db.runTransaction(async (transaction) => {
+      const bookingRef = db.collection("bookings").doc(bookingId);
+      const bookingSnap = await transaction.get(bookingRef);
+
+      if (!bookingSnap.exists) return;
+
+      const booking = bookingSnap.data();
+
+      if (booking.mp_payment_id === String(paymentId)) {
+        return;
+      }
+
+      if (mpStatus === "approved") {
+        transaction.update(bookingRef, {
+          status: booking.payment_option === "deposit" ? "deposit_paid" : "paid",
+          mp_payment_id: String(paymentId),
+          paid_at: FieldValue.serverTimestamp(),
+          updated_at: FieldValue.serverTimestamp(),
+        });
+      } else if (mpStatus === "rejected" || mpStatus === "cancelled") {
+        transaction.update(bookingRef, {
+          status: "cancelled",
+          mp_payment_id: String(paymentId),
+          updated_at: FieldValue.serverTimestamp(),
+        });
+      }
+    });
+
+    return res.sendStatus(200);
+  } catch (error) {
+    console.error("Error procesando webhook de Mercado Pago:", error);
+    return res.sendStatus(200);
+  }
+});
+
+app.patch("/courts/:courtId", verifyAuth, verifyArenaOwner, async (req, res) => {
+  try {
+    const { courtId } = req.params;
+    const {
+      name,
+      description,
+      available_days,
+      available_hours,
+      available,
+      price,
+      image_url,
+    } = req.body;
+
+    if (!Array.isArray(available_days) || !Array.isArray(available_hours)) {
+      return res.status(400).json({
+        message: "available_days y available_hours deben ser arrays",
+      });
+    }
+
+    const courtDoc = await db.collection("courts").doc(courtId).get();
+
+    if (!courtDoc.exists) {
+      return res.status(404).json({
+        message: "Cancha no encontrada",
+      });
+    }
+
+    await db.collection("courts").doc(courtId).update({
+      name,
+      description: description || "",
+      available_days,
+      available_hours,
+      available,
+      price: Number(price) || 0,
+      image_url: image_url || courtDoc.data().image_url || "",
+      updated_at: FieldValue.serverTimestamp(),
+    });
+
+    await regenerateCourtDates(
+      courtId,
+      courtDoc.data().arena_id,
+      available_days,
+      available_hours
+    );
+
+    return res.json({
+      message: "Cancha actualizada",
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      message: "Error actualizando cancha",
+    });
+  }
+});
+
+app.delete("/courts/:courtId", verifyAuth, verifyArenaOwner, async (req, res) => {
+  try {
+    const { courtId } = req.params;
+
+    await db.collection("courts").doc(courtId).update({
+      available: false,
+      deleted_at: FieldValue.serverTimestamp(),
+    });
+
+    return res.json({
+      message: "Cancha eliminada",
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      message: "Error eliminando cancha",
+    });
+  }
+});
+/* ======================================================
+   EVENTOS / CANCHA LIBRE
+====================================================== */
+
+app.post("/events", verifyAuth, verifyArenaOwner, async (req, res) => {
+  try {
+    const { arena_id, court_id, title, date, time, end_time, spots, price } = req.body;
+
+    // Turnos que ocupa la cancha libre (si no mandan "times", es un solo turno)
+    const times = Array.isArray(req.body.times) && req.body.times.length > 0
+      ? [...new Set(req.body.times)].sort()
+      : [time];
+
+    if (!arena_id || !court_id || !title || !date || !times[0] || !spots) {
+      return res.status(400).json({
+        message: "Faltan campos obligatorios",
+      });
+    }
+
+    const eventId = await db.runTransaction(async (transaction) => {
+      const takenTimes = [];
+
+      for (const slotTime of times) {
+        const { taken } = await getSlotState(transaction, {
+          courtId: court_id,
+          date,
+          time: slotTime,
+        });
+
+        if (taken) takenTimes.push(slotTime);
+      }
+
+      if (takenTimes.length > 0) {
+        const error = new Error(`Horario no disponible: ${takenTimes.join(", ")}`);
+        error.isSlotTaken = true;
+        throw error;
+      }
+
+      const eventRef = db.collection("events").doc();
+
+      transaction.set(eventRef, {
+        arena_id,
+        court_id,
+        title,
+        date,
+        time: times[0],
+        end_time: end_time || null,
+        times,
+        spots: Number(spots) || 0,
+        price: Number(price) || 0,
+        status: "active",
+        created_at: FieldValue.serverTimestamp(),
+      });
+
+      times.forEach((slotTime) => {
+        transaction.set(db.collection("bookings").doc(), {
+          arena_id,
+          court_id,
+          date,
+          time: slotTime,
+          customer_name: `Cancha libre: ${title}`,
+          customer_email: "",
+          customer_phone: "",
+          amount: 0,
+          deposit_amount: 0,
+          payment_option: null,
+          coupon_code: null,
+          reason: title,
+          event_id: eventRef.id,
+          status: "blocked",
+          source: "event",
+          created_by: req.uid,
+          created_at: FieldValue.serverTimestamp(),
+        });
+      });
+
+      return eventRef.id;
     });
 
     return res.status(201).json({
-      message: "Reserva creada",
-      booking_id: bookingRef.id,
+      message: "Evento creado",
+      event_id: eventId,
+    });
+  } catch (error) {
+    console.error(error);
+
+    if (error.isSlotTaken) {
+      return res.status(400).json({ message: error.message });
+    }
+
+    return res.status(500).json({
+      message: "Error creando evento",
+    });
+  }
+});
+
+app.get("/arena/:arenaId/events", async (req, res) => {
+  try {
+    const { arenaId } = req.params;
+
+    const snapshot = await db
+      .collection("events")
+      .where("arena_id", "==", arenaId)
+      .where("status", "==", "active")
+      .get();
+
+    const events = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    return res.json(events);
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Error obteniendo eventos",
+    });
+  }
+});
+
+app.get("/events/:eventId", async (req, res) => {
+  try {
+    const { eventId } = req.params;
+
+    const eventDoc = await db.collection("events").doc(eventId).get();
+
+    if (!eventDoc.exists) {
+      return res.status(404).json({
+        message: "Evento no encontrado",
+      });
+    }
+
+    const registrationsSnapshot = await db
+      .collection("event_registrations")
+      .where("event_id", "==", eventId)
+      .get();
+
+    const event = eventDoc.data();
+    const spotsLeft = Math.max(
+      (event.spots || 0) - registrationsSnapshot.size,
+      0
+    );
+
+    return res.json({
+      id: eventDoc.id,
+      ...event,
+      spots_left: spotsLeft,
     });
   } catch (error) {
     console.error(error);
 
     return res.status(500).json({
-      message: "Error creando reserva",
+      message: "Error obteniendo evento",
     });
+  }
+});
+
+app.post("/events/:eventId/register", async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { name, last_name, email, phone } = req.body;
+
+    if (!name || !last_name || !email || !phone) {
+      return res.status(400).json({
+        message: "Faltan campos obligatorios",
+      });
+    }
+
+    await db.runTransaction(async (transaction) => {
+      const eventRef = db.collection("events").doc(eventId);
+      const eventSnap = await transaction.get(eventRef);
+
+      if (!eventSnap.exists || eventSnap.data().status !== "active") {
+        throw new Error("Evento no encontrado");
+      }
+
+      const registrationsQuery = db
+        .collection("event_registrations")
+        .where("event_id", "==", eventId);
+
+      const registrationsSnap = await transaction.get(registrationsQuery);
+
+      if (registrationsSnap.size >= (eventSnap.data().spots || 0)) {
+        throw new Error("Cupos completos");
+      }
+
+      const registrationRef = db.collection("event_registrations").doc();
+
+      transaction.set(registrationRef, {
+        event_id: eventId,
+        arena_id: eventSnap.data().arena_id,
+        name,
+        last_name,
+        email,
+        phone,
+        created_at: FieldValue.serverTimestamp(),
+      });
+    });
+
+    return res.status(201).json({
+      message: "Registro exitoso",
+    });
+  } catch (error) {
+    console.error(error);
+
+    if (error.message === "Cupos completos") {
+      return res.status(400).json({
+        message: "Cupos completos",
+      });
+    }
+
+    if (error.message === "Evento no encontrado") {
+      return res.status(404).json({
+        message: "Evento no encontrado",
+      });
+    }
+
+    return res.status(500).json({
+      message: "Error registrando jugador",
+    });
+  }
+});
+
+app.get(
+  "/events/:eventId/registrations",
+  verifyAuth,
+  verifyArenaOwner,
+  async (req, res) => {
+    try {
+      const { eventId } = req.params;
+
+      const snapshot = await db
+        .collection("event_registrations")
+        .where("event_id", "==", eventId)
+        .get();
+
+      const registrations = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      return res.json(registrations);
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ message: "Error obteniendo anotados" });
+    }
+  }
+);
+
+app.patch("/events/:eventId", verifyAuth, verifyArenaOwner, async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { status, spots, price, date, time, title } = req.body;
+
+    // Fecha y hora no se editan: el bloqueo del turno quedaría en el horario viejo
+    if (date || time) {
+      return res.status(400).json({
+        message: "Para cambiar fecha u hora, cancelá el evento y creá uno nuevo",
+      });
+    }
+
+    const updates = { updated_at: FieldValue.serverTimestamp() };
+
+    if (status) updates.status = status;
+    if (spots !== undefined) updates.spots = Number(spots) || 0;
+    if (price !== undefined) updates.price = Number(price) || 0;
+    if (title) updates.title = title;
+
+    await db.collection("events").doc(eventId).update(updates);
+
+    if (status === "cancelled") {
+      const blockSnapshot = await db
+        .collection("bookings")
+        .where("event_id", "==", eventId)
+        .where("status", "==", "blocked")
+        .get();
+
+      const batch = db.batch();
+
+      blockSnapshot.docs.forEach((doc) => {
+        batch.update(doc.ref, {
+          status: "cancelled",
+          updated_at: FieldValue.serverTimestamp(),
+        });
+      });
+
+      await batch.commit();
+    }
+
+    return res.json({ message: "Evento actualizado" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error actualizando evento" });
   }
 });
 
