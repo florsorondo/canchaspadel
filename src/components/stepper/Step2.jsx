@@ -35,6 +35,17 @@ export default function Step2({ booking, updateBooking, setStep }) {
     selectedDate
   );
 
+  // Ordenados y con los horarios de hoy que ya pasaron marcados como no disponibles
+  const todayISO = toISODate(today.getFullYear(), today.getMonth(), today.getDate());
+  const nowHHMM = `${String(today.getHours()).padStart(2, "0")}:${String(today.getMinutes()).padStart(2, "0")}`;
+
+  const visibleHours = [...hours]
+    .sort((a, b) => a.hour.localeCompare(b.hour))
+    .map((item) => ({
+      ...item,
+      unavailable: item.taken || (selectedDate === todayISO && item.hour <= nowHHMM),
+    }));
+
   const days = Array.from({ length: daysInMonth }, (_, i) => {
     const day = i + 1;
     const dateISO = toISODate(year, month, day);
@@ -152,13 +163,13 @@ export default function Step2({ booking, updateBooking, setStep }) {
                 </p>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {hours.map((item) => (
+                  {visibleHours.map((item) => (
                     <button
                       key={item.hour}
-                      disabled={item.taken}
+                      disabled={item.unavailable}
                       onClick={() => setSelectedTime(item.hour)}
                       className={`py-3 rounded-sm text-sm font-semibold transition-all duration-300 ${
-                        item.taken
+                        item.unavailable
                           ? "bg-[#F5F1E9] text-[#D6D0C8] cursor-not-allowed line-through"
                           : selectedTime === item.hour
                           ? "bg-[#06122B] text-white shadow-md"
