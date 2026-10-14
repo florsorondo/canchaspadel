@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useArena } from "../../hooks/useArena";
 import { useCourts } from "../../hooks/useCourts";
 import { useEvents } from "../../hooks/useEvents";
+import { useCourtAvailability } from "../../hooks/useCourtAvailability";
 import { getCourtNameById } from "../../utils/courts";
 import { PrimaryButton } from "./shared";
 import Loader from "../Loader";
@@ -25,6 +26,12 @@ export default function CrearEvento() {
   const [registrantes, setRegistrantes] = useState({});
   const [cargandoRegistrantes, setCargandoRegistrantes] = useState(false);
 
+  const {
+    hours: turnos,
+    loading: cargandoTurnos,
+    fetchAvailability,
+  } = useCourtAvailability(event.court_id, event.date);
+
   const handleCreateEvent = async (e) => {
     e.preventDefault();
 
@@ -33,10 +40,16 @@ export default function CrearEvento() {
       return;
     }
 
+    if (!event.date || !event.time) {
+      alert("Elegí la fecha y el horario");
+      return;
+    }
+
     const result = await createEvent(event);
 
     if (!result.success) {
       alert(result.error);
+      fetchAvailability();
       return;
     }
 
@@ -101,7 +114,7 @@ export default function CrearEvento() {
 
           <select
             value={event.court_id}
-            onChange={(e) => setEvent({ ...event, court_id: e.target.value })}
+            onChange={(e) => setEvent({ ...event, court_id: e.target.value, time: "" })}
             className="px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B]"
           >
             <option value="">Elegí una cancha</option>
@@ -116,16 +129,34 @@ export default function CrearEvento() {
             <input
               type="date"
               value={event.date}
-              onChange={(e) => setEvent({ ...event, date: e.target.value })}
+              onChange={(e) => setEvent({ ...event, date: e.target.value, time: "" })}
               className="px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B]"
             />
 
-            <input
-              type="time"
+            <select
               value={event.time}
               onChange={(e) => setEvent({ ...event, time: e.target.value })}
-              className="px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B]"
-            />
+              disabled={!event.court_id || !event.date || cargandoTurnos}
+              className="px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B] disabled:opacity-60"
+            >
+              <option value="">
+                {!event.court_id || !event.date
+                  ? "Elegí cancha y fecha"
+                  : cargandoTurnos
+                    ? "Cargando turnos..."
+                    : turnos.length === 0
+                      ? "Sin turnos ese día"
+                      : "Elegí un horario"}
+              </option>
+              {[...turnos]
+                .sort((a, b) => a.hour.localeCompare(b.hour))
+                .map((turno) => (
+                  <option key={turno.hour} value={turno.hour} disabled={turno.taken}>
+                    {turno.hour}
+                    {turno.taken ? " · ocupado" : ""}
+                  </option>
+                ))}
+            </select>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -157,29 +157,33 @@ const verifyArenaOwner = async (req, res, next) => {
    BOOKING / COUPON HELPERS
 ====================================================== */
 
-const reserveSlot = async (transaction, { arenaId, courtId, date, time }) => {
-  const existingBookingQuery = db
+// Revisa TODAS las reservas del turno (puede haber canceladas y activas a la vez)
+const getSlotState = async (transaction, { courtId, date, time }) => {
+  const slotQuery = db
     .collection("bookings")
     .where("court_id", "==", courtId)
     .where("date", "==", date)
-    .where("time", "==", time)
-    .limit(1);
+    .where("time", "==", time);
 
-  const existingBookingSnap = await transaction.get(existingBookingQuery);
+  const slotSnap = await transaction.get(slotQuery);
 
-  let staleBookingRef = null;
+  const taken = slotSnap.docs.some((doc) => isBookingBlocking(doc.data()));
+  const staleBookingRefs = slotSnap.docs
+    .filter((doc) => doc.data().status === "pending" && !isBookingBlocking(doc.data()))
+    .map((doc) => doc.ref);
 
-  if (!existingBookingSnap.empty) {
-    const existingDoc = existingBookingSnap.docs[0];
-    const existingData = existingDoc.data();
+  return { taken, staleBookingRefs };
+};
 
-    if (isBookingBlocking(existingData)) {
-      throw new Error("Horario no disponible");
-    }
+const reserveSlot = async (transaction, { arenaId, courtId, date, time }) => {
+  const { taken, staleBookingRefs } = await getSlotState(transaction, {
+    courtId,
+    date,
+    time,
+  });
 
-    if (existingData.status === "pending") {
-      staleBookingRef = existingDoc.ref;
-    }
+  if (taken) {
+    throw new Error("Horario no disponible");
   }
 
   const dayBookingsQuery = db
@@ -194,7 +198,7 @@ const reserveSlot = async (transaction, { arenaId, courtId, date, time }) => {
   const [year, month, day] = date.split("-");
   const refId = `${day}-${month}-${year}-${reservationNumber}`;
 
-  return { staleBookingRef, refId, reservationNumber };
+  return { staleBookingRefs, refId, reservationNumber };
 };
 
 const normalizeCouponCode = (code) => String(code || "").trim().toUpperCase();
@@ -972,7 +976,7 @@ app.post("/bookings", async (req, res) => {
         throw new Error("Cancha no encontrada");
       }
 
-      const { staleBookingRef, refId, reservationNumber } = await reserveSlot(
+      const { staleBookingRefs, refId, reservationNumber } = await reserveSlot(
         transaction,
         { arenaId: arena_id, courtId: court_id, date, time }
       );
@@ -990,12 +994,12 @@ app.post("/bookings", async (req, res) => {
         depositAmount = Math.min(configuredDeposit, amount);
       }
 
-      if (staleBookingRef) {
-        transaction.update(staleBookingRef, {
+      staleBookingRefs.forEach((staleRef) => {
+        transaction.update(staleRef, {
           status: "cancelled",
           updated_at: FieldValue.serverTimestamp(),
         });
-      }
+      });
 
       const bookingRef = db.collection("bookings").doc();
 
@@ -1125,19 +1129,19 @@ app.post(
           throw new Error("Cancha no encontrada");
         }
 
-        const { staleBookingRef, refId, reservationNumber } = await reserveSlot(
+        const { staleBookingRefs, refId, reservationNumber } = await reserveSlot(
           transaction,
           { arenaId, courtId: court_id, date, time }
         );
 
         const amount = Number(courtSnap.data().price) || 0;
 
-        if (staleBookingRef) {
-          transaction.update(staleBookingRef, {
+        staleBookingRefs.forEach((staleRef) => {
+          transaction.update(staleRef, {
             status: "cancelled",
             updated_at: FieldValue.serverTimestamp(),
           });
-        }
+        });
 
         const bookingRef = db.collection("bookings").doc();
 
@@ -1213,19 +1217,13 @@ app.post(
 
       for (const time of times) {
         const blocked = await db.runTransaction(async (transaction) => {
-          const existingBookingQuery = db
-            .collection("bookings")
-            .where("court_id", "==", court_id)
-            .where("date", "==", date)
-            .where("time", "==", time)
-            .limit(1);
+          const { taken } = await getSlotState(transaction, {
+            courtId: court_id,
+            date,
+            time,
+          });
 
-          const existingBookingSnap = await transaction.get(existingBookingQuery);
-
-          if (
-            !existingBookingSnap.empty &&
-            isBookingBlocking(existingBookingSnap.docs[0].data())
-          ) {
+          if (taken) {
             return false;
           }
 
@@ -1431,19 +1429,13 @@ app.post("/events", verifyAuth, verifyArenaOwner, async (req, res) => {
     }
 
     const eventId = await db.runTransaction(async (transaction) => {
-      const existingBookingQuery = db
-        .collection("bookings")
-        .where("court_id", "==", court_id)
-        .where("date", "==", date)
-        .where("time", "==", time)
-        .limit(1);
+      const { taken } = await getSlotState(transaction, {
+        courtId: court_id,
+        date,
+        time,
+      });
 
-      const existingBookingSnap = await transaction.get(existingBookingQuery);
-
-      if (
-        !existingBookingSnap.empty &&
-        isBookingBlocking(existingBookingSnap.docs[0].data())
-      ) {
+      if (taken) {
         throw new Error("Horario no disponible");
       }
 
@@ -1662,13 +1654,18 @@ app.patch("/events/:eventId", verifyAuth, verifyArenaOwner, async (req, res) => 
     const { eventId } = req.params;
     const { status, spots, price, date, time, title } = req.body;
 
+    // Fecha y hora no se editan: el bloqueo del turno quedaría en el horario viejo
+    if (date || time) {
+      return res.status(400).json({
+        message: "Para cambiar fecha u hora, cancelá el evento y creá uno nuevo",
+      });
+    }
+
     const updates = { updated_at: FieldValue.serverTimestamp() };
 
     if (status) updates.status = status;
     if (spots !== undefined) updates.spots = Number(spots) || 0;
     if (price !== undefined) updates.price = Number(price) || 0;
-    if (date) updates.date = date;
-    if (time) updates.time = time;
     if (title) updates.title = title;
 
     await db.collection("events").doc(eventId).update(updates);
