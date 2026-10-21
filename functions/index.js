@@ -100,8 +100,11 @@ const REGISTRATION_REF_PREFIX = "inscripcion:";
 const isBookingBlocking = (bookingData, now = Date.now()) => {
   if (bookingData.status === "cancelled") return false;
 
+  // Solo vencen las pendientes online (esperando Mercado Pago); una carga manual
+  // sin pagar se cobra en el club y tiene que seguir ocupando el turno
   if (
     bookingData.status === "pending" &&
+    bookingData.source !== "manual" &&
     bookingData.created_at &&
     now - bookingData.created_at.toMillis() > PENDING_EXPIRY_MS
   ) {
@@ -218,7 +221,9 @@ const reserveSlot = async (transaction, { arenaId, courtId, date, time }) => {
 
   const dayBookings = await transaction.get(dayBookingsQuery);
 
-  const reservationNumber = dayBookings.size + 1;
+  // Siguiente al mayor ya usado: con size + 1 se repetía el número al borrar un bloqueo del día
+  const reservationNumber =
+    Math.max(0, ...dayBookings.docs.map((doc) => Number(doc.data().reservation_number) || 0)) + 1;
 
   const [year, month, day] = date.split("-");
   const refId = `${day}-${month}-${year}-${reservationNumber}`;
@@ -1165,7 +1170,7 @@ app.post(
         const courtRef = db.collection("courts").doc(court_id);
         const courtSnap = await transaction.get(courtRef);
 
-        if (!courtSnap.exists) {
+        if (!courtSnap.exists || courtSnap.data().arena_id !== arenaId) {
           throw new Error("Cancha no encontrada");
         }
 
@@ -1252,10 +1257,16 @@ app.post(
         });
       }
 
+      const courtSnap = await db.collection("courts").doc(court_id).get();
+
+      if (!courtSnap.exists || courtSnap.data().arena_id !== arenaId) {
+        return res.status(404).json({ message: "Cancha no encontrada" });
+      }
+
       const created = [];
       const skipped = [];
 
-      for (const time of times) {
+      for (const time of [...new Set(times)]) {
         const blocked = await db.runTransaction(async (transaction) => {
           const { taken } = await getSlotState(transaction, {
             courtId: court_id,
