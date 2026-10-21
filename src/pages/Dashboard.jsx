@@ -53,7 +53,7 @@ const Dashboard = () => {
                   {tab === "reservas" && "Panel de administración"}
                   {tab === "canchas" && "Canchas"}
                   {tab === "negocio" && "Mi negocio"}
-                  {tab === "ingresos" && "Ingresos"}
+                  {tab === "ingresos" && "Cobros"}
                   {tab === "crear-evento" && "Cancha libre"}
                   {tab === "cupones" && "Cupones"}
                   {tab === "clientes" && "Clientes"}
@@ -100,7 +100,7 @@ const Dashboard = () => {
               />
 
               <Tab
-                label="Ingresos"
+                label="Cobros"
                 active={tab === "ingresos"}
                 onClick={() => setTab("ingresos")}
               />

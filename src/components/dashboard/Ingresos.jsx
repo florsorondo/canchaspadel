@@ -108,15 +108,15 @@ const Ingresos = () => {
   return (
     <div className="p-4 md:p-8">
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
-        <Card title="Ingresos hoy" value={`$${ingresosHoy.toLocaleString()}`} subtitle="confirmados" />
-        <Card title="Ingresos semana" value={`$${ingresosSemana.toLocaleString()}`} subtitle="confirmados" />
-        <Card title="Ingresos mes" value={`$${ingresosMes.toLocaleString()}`} subtitle="total" />
+        <Card title="Cobrado hoy" value={`${ingresosHoy.toLocaleString()}`} subtitle="por reservas" />
+        <Card title="Cobrado esta semana" value={`${ingresosSemana.toLocaleString()}`} subtitle="por reservas" />
+        <Card title="Cobrado este mes" value={`${ingresosMes.toLocaleString()}`} subtitle="por reservas" />
         <Card title="Pagos pendientes" value={pagosPendientes} subtitle="por cobrar" />
       </div>
 
       <div className="border border-[#D6D0C8] rounded-lg overflow-hidden bg-white">
         <div className="p-5 border-b border-[#D6D0C8]">
-          <h2 className="text-2xl font-black text-[#06122B]">Movimientos</h2>
+          <h2 className="text-2xl font-black text-[#06122B]">Cobros por reserva</h2>
         </div>
 
         <div className="overflow-auto">
