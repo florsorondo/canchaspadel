@@ -19,4 +19,6 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app)
 export const storage = getStorage(app);
+// Por defecto reintenta 10 minutos antes de fallar; mejor avisar rápido
+storage.maxUploadRetryTime = 30 * 1000;
 export const analytics = getAnalytics(app);

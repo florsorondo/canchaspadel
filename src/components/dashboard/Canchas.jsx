@@ -300,9 +300,10 @@ const ModalCancha = ({ cancha, arenaId, diasGeneralesDelComplejo, onClose, onSav
       const url = await uploadCourtPhoto(arenaId, archivo);
       setImageUrl(url);
     } catch {
-      alert("No se pudo subir la foto");
+      alert("No se pudo subir la foto. Probá con otra imagen (JPG o PNG de hasta 5 MB).");
     } finally {
       setSubiendoFoto(false);
+      e.target.value = "";
     }
   };
 
