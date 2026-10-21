@@ -7,6 +7,7 @@ import { Modal, PrimaryButton, SecondaryButton } from "./shared";
 import { ASSIGNABLE_STATUSES, STATUS_LABELS, STATUS_STYLES } from "../../utils/bookingStatus";
 import Loader from "../Loader";
 import LinkReservas from "./LinkReservas";
+import { linkWhatsApp, mensajeReserva } from "../../utils/whatsapp";
 
 const PAGOS_MANUAL = [
   { value: "efectivo", label: "Efectivo" },
@@ -314,7 +315,18 @@ const DetailRow = ({ label, value }) => (
 );
 
 const BookingDetailModal = ({ reserva, courts, changeStatus, onEliminar, onClose }) => {
+  const { arena } = useArena();
   const estado = reserva.status || "pending";
+  const whatsapp =
+    reserva.customer_phone &&
+    linkWhatsApp(
+      reserva.customer_phone,
+      mensajeReserva({
+        booking: reserva,
+        courtName: getCourtNameById(courts, reserva.court_id),
+        arenaName: arena?.name,
+      })
+    );
 
   return (
     <Modal onClose={onClose}>
@@ -357,6 +369,17 @@ const BookingDetailModal = ({ reserva, courts, changeStatus, onEliminar, onClose
           value={reserva.source === "manual" ? "Carga manual" : "Reserva online"}
         />
       </div>
+
+      {whatsapp && (
+        <a
+          href={whatsapp}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-4 block w-full text-center px-6 py-3 rounded-sm bg-[#25D366] text-white text-[12px] font-extrabold uppercase tracking-[0.14em] hover:opacity-90 transition"
+        >
+          Enviar confirmación por WhatsApp
+        </a>
+      )}
 
       <div className="mt-5">
         <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-[#06122B] mb-2">

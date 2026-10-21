@@ -4,8 +4,7 @@ import { useBookings } from "../../hooks/useBookings";
 import { montoCobrado } from "../../utils/bookingStatus";
 import { Card } from "./shared";
 import Loader from "../Loader";
-
-const soloDigitos = (texto) => String(texto || "").replace(/\D/g, "");
+import { formatearFecha, linkWhatsApp, soloDigitos } from "../../utils/whatsapp";
 
 // Una reserva cuenta si el cliente realmente la hizo: se excluyen bloqueos,
 // canceladas y reservas online que nunca se pagaron.
@@ -20,19 +19,6 @@ const claveCliente = (b) =>
   soloDigitos(b.customer_phone) ||
   (b.customer_email || "").trim().toLowerCase() ||
   (b.customer_name || "").trim().toLowerCase();
-
-// wa.me necesita el número internacional: 54 9 + código de área + número
-const linkWhatsApp = (telefono) => {
-  let numero = soloDigitos(telefono);
-  if (!numero) return null;
-  if (numero.length === 10) numero = `549${numero}`;
-  return `https://wa.me/${numero}`;
-};
-
-const formatearFecha = (iso) => {
-  const [y, m, d] = iso.split("-");
-  return `${d}/${m}/${y}`;
-};
 
 const Clientes = () => {
   const { arenaId, loadingArena } = useArena();
