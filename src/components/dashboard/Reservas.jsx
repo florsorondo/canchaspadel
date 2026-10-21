@@ -402,7 +402,7 @@ const ModalNuevaReserva = ({ arenaId, courts, createManualBooking, onClose }) =>
   const [error, setError] = useState(null);
 
   const cancha = courts.find((c) => c.id === courtId);
-  const horarios = cancha?.available_hours || [];
+  const horarios = [...(cancha?.available_hours || [])].sort();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -442,7 +442,10 @@ const ModalNuevaReserva = ({ arenaId, courts, createManualBooking, onClose }) =>
       <form onSubmit={handleSubmit} className="grid gap-3">
         <select
           value={courtId}
-          onChange={(e) => setCourtId(e.target.value)}
+          onChange={(e) => {
+            setCourtId(e.target.value);
+            setTime("");
+          }}
           className="w-full border border-[#D6D0C8] bg-white rounded-sm px-4 py-3"
         >
           <option value="">Elegí una cancha</option>
@@ -544,7 +547,7 @@ const ModalBloquearHorarios = ({ arenaId, courts, blockHours, onClose }) => {
   const [error, setError] = useState(null);
 
   const cancha = courts.find((c) => c.id === courtId);
-  const horarios = cancha?.available_hours || [];
+  const horarios = [...(cancha?.available_hours || [])].sort();
 
   const toggleHora = (hora) => {
     setSelectedHours((prev) =>
