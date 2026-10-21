@@ -21,7 +21,7 @@ const TABS = [
   { id: "canchas", label: "Canchas", title: "Canchas", Component: Canchas },
   { id: "negocio", label: "Mi negocio", title: "Mi negocio", Component: MiNegocio },
   { id: "ingresos", label: "Cobros", title: "Cobros", Component: Ingresos, ownerOnly: true },
-  { id: "crear-evento", label: "Cancha libre", title: "Cancha libre", Component: CrearEvento },
+  { id: "crear-evento", label: "Eventos", title: "Eventos", Component: CrearEvento },
   { id: "cupones", label: "Cupones", title: "Cupones", Component: Cupones },
   { id: "equipo", label: "Equipo", title: "Equipo", Component: Equipo, ownerOnly: true },
 ];

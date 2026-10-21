@@ -16,7 +16,7 @@ const aHora = (minutos) =>
   `${String(Math.floor(minutos / 60)).padStart(2, "0")}:${String(minutos % 60).padStart(2, "0")}`;
 
 const EVENTO_VACIO = {
-  title: "Cancha libre",
+  title: "",
   court_id: "",
   date: "",
   time: "",
@@ -81,6 +81,11 @@ export default function CrearEvento() {
 
   const handleCreateEvent = async (e) => {
     e.preventDefault();
+
+    if (!event.title.trim()) {
+      alert("Ponele un nombre al evento (ej: Torneo de verano, Clase grupal)");
+      return;
+    }
 
     if (!event.court_id) {
       alert("Elegí una cancha");
@@ -152,18 +157,18 @@ export default function CrearEvento() {
     <div className="min-h-screen w-full bg-[#F5F1E9] px-5 sm:px-8 py-8">
       <section className="max-w-2xl mx-auto bg-white border border-[#D6D0C8] rounded-lg p-4 sm:p-6">
         <h1 className="text-xl sm:text-2xl font-black text-[#06122B]">
-          Crear cancha libre
+          Crear evento
         </h1>
 
         <p className="text-sm text-[#6D7580] mt-1 mb-5">
-          Configurá el evento, la cancha, el horario y los cupos.
+          Para cancha libre, clases o torneos: configurá el nombre, la cancha, el horario y los cupos.
         </p>
 
         <form onSubmit={handleCreateEvent} className="grid gap-3">
           <input
             value={event.title}
             onChange={(e) => setEvent({ ...event, title: e.target.value })}
-            placeholder="Título del evento"
+            placeholder="Nombre del evento (ej: Torneo de verano, Clase grupal)"
             className="px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B]"
           />
 
