@@ -1039,32 +1039,47 @@ app.post("/bookings", async (req, res) => {
       const unitPrice =
         payment_option === "deposit" ? result.depositAmount : result.amount;
 
-      const preference = await preferenceClient.create({
-        body: {
-          items: [
-            {
-              title: `Reserva ${result.ref_id}`,
-              quantity: 1,
-              unit_price: unitPrice,
-              currency_id: "ARS",
+      // Si Mercado Pago no genera el pago, se cancela la reserva para no dejar el turno bloqueado
+      try {
+        const preference = await preferenceClient.create({
+          body: {
+            items: [
+              {
+                title: `Reserva ${result.ref_id}`,
+                quantity: 1,
+                unit_price: unitPrice,
+                currency_id: "ARS",
+              },
+            ],
+            external_reference: result.booking_id,
+            notification_url: `${FUNCTIONS_BASE_URL}/webhooks/mercadopago`,
+            back_urls: {
+              success: `${FRONTEND_BASE_URL}/booking/${arena_id}/confirmacion?booking_id=${result.booking_id}`,
+              pending: `${FRONTEND_BASE_URL}/booking/${arena_id}/confirmacion?booking_id=${result.booking_id}`,
+              failure: `${FRONTEND_BASE_URL}/booking/${arena_id}/confirmacion?booking_id=${result.booking_id}`,
             },
-          ],
-          external_reference: result.booking_id,
-          notification_url: `${FUNCTIONS_BASE_URL}/webhooks/mercadopago`,
-          back_urls: {
-            success: `${FRONTEND_BASE_URL}/booking/${arena_id}/confirmacion?booking_id=${result.booking_id}`,
-            pending: `${FRONTEND_BASE_URL}/booking/${arena_id}/confirmacion?booking_id=${result.booking_id}`,
-            failure: `${FRONTEND_BASE_URL}/booking/${arena_id}/confirmacion?booking_id=${result.booking_id}`,
+            auto_return: "approved",
           },
-          auto_return: "approved",
-        },
-      });
+        });
 
-      await db.collection("bookings").doc(result.booking_id).update({
-        mp_preference_id: preference.id,
-      });
+        await db.collection("bookings").doc(result.booking_id).update({
+          mp_preference_id: preference.id,
+        });
 
-      initPoint = preference.init_point;
+        initPoint = preference.init_point;
+      } catch (mpError) {
+        console.error("Error creando la preferencia de Mercado Pago:", mpError);
+
+        await db.collection("bookings").doc(result.booking_id).update({
+          status: "cancelled",
+          cancel_reason: "payment_init_failed",
+          updated_at: FieldValue.serverTimestamp(),
+        });
+
+        return res.status(502).json({
+          message: "No se pudo iniciar el pago. Probá de nuevo en unos minutos.",
+        });
+      }
     }
 
     return res.status(201).json({
