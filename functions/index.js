@@ -50,13 +50,21 @@ const regenerateCourtDates = async (courtId, arenaId, availableDays, availableHo
     .where("field_id", "==", courtId)
     .get();
 
+  // IDs fijos por cancha/día/hora: si se guarda dos veces a la vez, se pisa el mismo doc en vez de duplicarlo
+  const days = [...new Set(availableDays)];
+  const hours = [...new Set(availableHours)];
+  const courtDateId = (day, hour) => `${courtId}_${day}_${hour}`;
+  const newIds = new Set(days.flatMap((day) => hours.map((hour) => courtDateId(day, hour))));
+
   const batch = db.batch();
 
-  existingSnapshot.docs.forEach((doc) => batch.delete(doc.ref));
+  existingSnapshot.docs
+    .filter((doc) => !newIds.has(doc.id))
+    .forEach((doc) => batch.delete(doc.ref));
 
-  availableDays.forEach((day) => {
-    availableHours.forEach((hour) => {
-      const courtDateRef = db.collection("court_dates").doc();
+  days.forEach((day) => {
+    hours.forEach((hour) => {
+      const courtDateRef = db.collection("court_dates").doc(courtDateId(day, hour));
 
       batch.set(courtDateRef, {
         field_id: courtId,
@@ -466,7 +474,7 @@ app.get("/courts/:courtId/availability", async (req, res) => {
       .where("enabled", "==", true)
       .get();
 
-    const hoursTemplate = templateSnapshot.docs.map((doc) => doc.data().hour);
+    const hoursTemplate = [...new Set(templateSnapshot.docs.map((doc) => doc.data().hour))];
 
     const bookingsSnapshot = await db
       .collection("bookings")
