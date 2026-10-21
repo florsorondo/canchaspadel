@@ -39,6 +39,10 @@ export default function Step3({ arena, arenaId, booking, updateBooking, setStep 
   const effectivePrice = coupon ? coupon.discounted_amount : price;
   const depositAmount = Math.min(depositAmountConfigured, effectivePrice);
 
+  // Solo se ofrece señar si la seña es menor al precio; si no, señar sería pagar el total
+  const puedeSenar = hasDeposit && depositAmountConfigured < effectivePrice;
+  const opcionPago = puedeSenar ? paymentOption : "full";
+
   const handleAplicarCupon = async () => {
     if (!couponInput.trim()) return;
 
@@ -77,7 +81,7 @@ export default function Step3({ arena, arenaId, booking, updateBooking, setStep 
       setSubmitting(true);
       setError(null);
 
-      updateBooking({ customerName, customerEmail, customerPhone, paymentOption });
+      updateBooking({ customerName, customerEmail, customerPhone, paymentOption: opcionPago });
 
       const res = await fetch(`${API_URL}/bookings`, {
         method: "POST",
@@ -90,7 +94,7 @@ export default function Step3({ arena, arenaId, booking, updateBooking, setStep 
           customer_name: customerName.trim(),
           customer_email: customerEmail.trim(),
           customer_phone: customerPhone.trim(),
-          payment_option: paymentOption,
+          payment_option: opcionPago,
           coupon_code: coupon ? coupon.code : undefined,
         }),
       });
@@ -254,11 +258,11 @@ export default function Step3({ arena, arenaId, booking, updateBooking, setStep 
             </div>
 
             <div className="grid gap-3">
-              {hasDeposit && (
+              {puedeSenar && (
                 <button
                   onClick={() => setPaymentOption("deposit")}
                   className={`w-full rounded-lg border p-4 text-left flex items-center gap-4 transition-all duration-300 ${
-                    paymentOption === "deposit"
+                    opcionPago === "deposit"
                       ? "bg-white border-[#06122B] shadow-md ring-1 ring-[#06122B]"
                       : "bg-white border-[#D6D0C8] hover:border-[#CD9A50] hover:shadow-md"
                   }`}
@@ -290,7 +294,7 @@ export default function Step3({ arena, arenaId, booking, updateBooking, setStep 
               <button
                 onClick={() => setPaymentOption("full")}
                 className={`w-full rounded-lg border p-4 text-left flex items-center gap-4 transition-all duration-300 ${
-                  paymentOption === "full"
+                  opcionPago === "full"
                     ? "bg-white border-[#06122B] shadow-md ring-1 ring-[#06122B]"
                     : "bg-white border-[#D6D0C8] hover:border-[#CD9A50] hover:shadow-md"
                 }`}
@@ -341,7 +345,7 @@ export default function Step3({ arena, arenaId, booking, updateBooking, setStep 
           <p className="text-sm text-[#6D7580]">
             Opción seleccionada:{" "}
             <span className="font-semibold text-[#06122B]">
-              {paymentOption === "full" ? "Pago total" : "Seña"} con Mercado Pago
+              {opcionPago === "full" ? "Pago total" : "Seña"} con Mercado Pago
             </span>
           </p>
 
