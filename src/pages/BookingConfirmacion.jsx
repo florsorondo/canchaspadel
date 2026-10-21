@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useBooking } from "../hooks/useBooking";
+import { useArenaById } from "../hooks/useArenaById";
+import { useCourts } from "../hooks/useCourts";
+import { getCourtNameById } from "../utils/courts";
+import { linkWhatsApp, mensajeReserva } from "../utils/whatsapp";
 import Loader from "../components/Loader";
 
 const ESTADO_INFO = {
@@ -37,7 +41,24 @@ export default function BookingConfirmacion() {
   const bookingId = searchParams.get("booking_id");
 
   const { booking, loading, timedOut, cancelBooking } = useBooking(bookingId);
+  const { arena } = useArenaById(arenaId);
+  const { courts } = useCourts(arenaId);
   const [cancelando, setCancelando] = useState(false);
+
+  // El cliente le manda los datos al club: los dos quedan con la reserva en el chat
+  const whatsappClub =
+    booking &&
+    arena?.phone &&
+    booking.status !== "cancelled" &&
+    linkWhatsApp(
+      arena.phone,
+      mensajeReserva({
+        booking,
+        courtName: getCourtNameById(courts, booking.court_id),
+        arenaName: arena.name,
+        paraElClub: true,
+      })
+    );
 
   const status = booking?.status;
   const isTerminal = status && ESTADO_INFO[status];
@@ -94,8 +115,8 @@ export default function BookingConfirmacion() {
                 </h2>
 
                 <p className="text-sm sm:text-base text-[#6D7580] mt-2">
-                  Si ya pagaste, tu reserva se va a confirmar en breve. Podés
-                  cerrar esta página, te vamos a avisar por WhatsApp.
+                  Si ya pagaste, tu reserva se va a confirmar en breve. Mandale
+                  los datos al club por WhatsApp y te confirman el turno.
                 </p>
               </div>
             ) : (
@@ -160,6 +181,17 @@ export default function BookingConfirmacion() {
                   </span>
                 </div>
               </div>
+            )}
+
+            {whatsappClub && (
+              <a
+                href={whatsappClub}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-5 block w-full text-center px-7 py-3 rounded-sm bg-[#25D366] text-white text-sm font-bold uppercase tracking-[0.1em] hover:opacity-90 transition-all"
+              >
+                Enviar mi reserva al club por WhatsApp
+              </a>
             )}
 
             <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
