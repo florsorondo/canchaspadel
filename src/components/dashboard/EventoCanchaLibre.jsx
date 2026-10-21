@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useEvent } from "../../hooks/useEvent";
 import Loader from "../Loader";
 
 export default function EventoCanchaLibre() {
   const { id } = useParams();
   const { event, spotsLeft, loading, registering, error, register } = useEvent(id);
+  const [searchParams] = useSearchParams();
 
   const [form, setForm] = useState({
     name: "",
@@ -27,6 +28,18 @@ export default function EventoCanchaLibre() {
     );
   }
 
+  const precio = Number(event.price) || 0;
+  const senaConfigurada = Number(event.deposit) || 0;
+  const sena = senaConfigurada > 0 ? Math.min(senaConfigurada, precio || senaConfigurada) : precio;
+
+  // Mercado Pago vuelve a esta página con el resultado del pago en la URL
+  const estadoPago = searchParams.get("collection_status") || searchParams.get("status");
+  const mensajePago = {
+    approved: { ok: true, texto: "¡Listo! Pagaste la seña y tu lugar está reservado." },
+    pending: { ok: true, texto: "Tu pago está pendiente. Cuando se acredite, tu lugar queda confirmado." },
+    in_process: { ok: true, texto: "Tu pago está en proceso. Cuando se acredite, tu lugar queda confirmado." },
+  }[estadoPago] || (estadoPago ? { ok: false, texto: "El pago no se completó. Podés intentar de nuevo." } : null);
+
   const handleRegister = async (e) => {
     e.preventDefault();
 
@@ -41,6 +54,11 @@ export default function EventoCanchaLibre() {
 
     if (!result.success) {
       alert(result.error);
+      return;
+    }
+
+    if (result.initPoint) {
+      window.location.href = result.initPoint;
       return;
     }
 
@@ -74,9 +92,28 @@ export default function EventoCanchaLibre() {
           </p>
 
           <p className="text-sm font-bold text-[#CD9A50] mt-1">
-            ${event.price} por persona
+            ${precio.toLocaleString("es-AR")} por persona
           </p>
+
+          {sena > 0 && (
+            <p className="text-sm text-[#6D7580] mt-1">
+              Para anotarte pagás una seña de <b>${sena.toLocaleString("es-AR")}</b> con Mercado Pago
+              {precio > sena ? ` y el resto ($${(precio - sena).toLocaleString("es-AR")}) en el club.` : "."}
+            </p>
+          )}
         </div>
+
+        {mensajePago && (
+          <div
+            className={`rounded-lg p-4 mb-5 font-semibold border ${
+              mensajePago.ok
+                ? "bg-[#2f6f61]/10 border-[#2f6f61]/30 text-[#2f6f61]"
+                : "bg-red-50 border-red-200 text-red-600"
+            }`}
+          >
+            {mensajePago.texto}
+          </div>
+        )}
 
         {registrado ? (
           <div className="rounded-lg bg-[#2f6f61]/10 border border-[#2f6f61]/30 p-4 text-[#2f6f61] font-semibold">
@@ -129,7 +166,13 @@ export default function EventoCanchaLibre() {
                   : "bg-[#06122B] text-[#F5F1E9] hover:opacity-90"
               }`}
             >
-              {sinCupos ? "Cupos completos" : registering ? "Anotando..." : "Anotarme"}
+              {sinCupos
+                ? "Cupos completos"
+                : registering
+                  ? "Anotando..."
+                  : sena > 0
+                    ? "Anotarme y pagar la seña"
+                    : "Anotarme"}
             </button>
           </form>
         )}

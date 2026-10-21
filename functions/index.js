@@ -72,6 +72,23 @@ const regenerateCourtDates = async (courtId, arenaId, availableDays, availableHo
   await batch.commit();
 };
 
+// Una inscripción ocupa cupo si está pagada, o si está pendiente de pago y no venció
+const registrationOccupiesSpot = (registration, now = Date.now()) => {
+  if (registration.status === "cancelled") return false;
+
+  if (
+    registration.status === "pending" &&
+    registration.created_at &&
+    now - registration.created_at.toMillis() > PENDING_EXPIRY_MS
+  ) {
+    return false;
+  }
+
+  return true;
+};
+
+const REGISTRATION_REF_PREFIX = "inscripcion:";
+
 const isBookingBlocking = (bookingData, now = Date.now()) => {
   if (bookingData.status === "cancelled") return false;
 
@@ -1319,6 +1336,34 @@ app.post("/webhooks/mercadopago", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    if (bookingId.startsWith(REGISTRATION_REF_PREFIX)) {
+      const registrationRef = db
+        .collection("event_registrations")
+        .doc(bookingId.slice(REGISTRATION_REF_PREFIX.length));
+      const registrationSnap = await registrationRef.get();
+
+      if (!registrationSnap.exists || registrationSnap.data().mp_payment_id === String(paymentId)) {
+        return res.sendStatus(200);
+      }
+
+      if (mpStatus === "approved") {
+        await registrationRef.update({
+          status: "paid",
+          mp_payment_id: String(paymentId),
+          paid_at: FieldValue.serverTimestamp(),
+          updated_at: FieldValue.serverTimestamp(),
+        });
+      } else if (mpStatus === "rejected" || mpStatus === "cancelled") {
+        await registrationRef.update({
+          status: "cancelled",
+          mp_payment_id: String(paymentId),
+          updated_at: FieldValue.serverTimestamp(),
+        });
+      }
+
+      return res.sendStatus(200);
+    }
+
     await db.runTransaction(async (transaction) => {
       const bookingRef = db.collection("bookings").doc(bookingId);
       const bookingSnap = await transaction.get(bookingRef);
@@ -1435,7 +1480,7 @@ app.delete("/courts/:courtId", verifyAuth, verifyArenaOwner, async (req, res) =>
 
 app.post("/events", verifyAuth, verifyArenaOwner, async (req, res) => {
   try {
-    const { arena_id, court_id, title, date, time, end_time, spots, price } = req.body;
+    const { arena_id, court_id, title, date, time, end_time, spots, price, deposit } = req.body;
 
     // Turnos que ocupa la cancha libre (si no mandan "times", es un solo turno)
     const times = Array.isArray(req.body.times) && req.body.times.length > 0
@@ -1479,6 +1524,7 @@ app.post("/events", verifyAuth, verifyArenaOwner, async (req, res) => {
         times,
         spots: Number(spots) || 0,
         price: Number(price) || 0,
+        deposit: Number(deposit) || 0,
         status: "active",
         created_at: FieldValue.serverTimestamp(),
       });
@@ -1568,10 +1614,10 @@ app.get("/events/:eventId", async (req, res) => {
       .get();
 
     const event = eventDoc.data();
-    const spotsLeft = Math.max(
-      (event.spots || 0) - registrationsSnapshot.size,
-      0
-    );
+    const occupied = registrationsSnapshot.docs.filter((doc) =>
+      registrationOccupiesSpot(doc.data())
+    ).length;
+    const spotsLeft = Math.max((event.spots || 0) - occupied, 0);
 
     return res.json({
       id: eventDoc.id,
@@ -1598,7 +1644,7 @@ app.post("/events/:eventId/register", async (req, res) => {
       });
     }
 
-    await db.runTransaction(async (transaction) => {
+    const result = await db.runTransaction(async (transaction) => {
       const eventRef = db.collection("events").doc(eventId);
       const eventSnap = await transaction.get(eventRef);
 
@@ -1606,32 +1652,88 @@ app.post("/events/:eventId/register", async (req, res) => {
         throw new Error("Evento no encontrado");
       }
 
+      const event = eventSnap.data();
+
       const registrationsQuery = db
         .collection("event_registrations")
         .where("event_id", "==", eventId);
 
       const registrationsSnap = await transaction.get(registrationsQuery);
+      const occupied = registrationsSnap.docs.filter((doc) =>
+        registrationOccupiesSpot(doc.data())
+      ).length;
 
-      if (registrationsSnap.size >= (eventSnap.data().spots || 0)) {
+      if (occupied >= (event.spots || 0)) {
         throw new Error("Cupos completos");
       }
+
+      // Se cobra la seña del evento; si no tiene seña, el precio completo
+      const price = Number(event.price) || 0;
+      const deposit = Number(event.deposit) || 0;
+      const amountToPay = deposit > 0 ? Math.min(deposit, price || deposit) : price;
 
       const registrationRef = db.collection("event_registrations").doc();
 
       transaction.set(registrationRef, {
         event_id: eventId,
-        arena_id: eventSnap.data().arena_id,
+        arena_id: event.arena_id,
         name,
         last_name,
         email,
         phone,
+        amount: amountToPay,
+        status: amountToPay > 0 ? "pending" : "confirmed",
         created_at: FieldValue.serverTimestamp(),
       });
+
+      return { registrationId: registrationRef.id, amountToPay, title: event.title };
     });
 
-    return res.status(201).json({
-      message: "Registro exitoso",
-    });
+    if (result.amountToPay <= 0) {
+      return res.status(201).json({ message: "Registro exitoso" });
+    }
+
+    try {
+      const backUrl = `${FRONTEND_BASE_URL}/cancha-libre/${eventId}`;
+
+      const preference = await preferenceClient.create({
+        body: {
+          items: [
+            {
+              title: `Seña cancha libre: ${result.title}`,
+              quantity: 1,
+              unit_price: result.amountToPay,
+              currency_id: "ARS",
+            },
+          ],
+          external_reference: `${REGISTRATION_REF_PREFIX}${result.registrationId}`,
+          notification_url: `${FUNCTIONS_BASE_URL}/webhooks/mercadopago`,
+          back_urls: { success: backUrl, pending: backUrl, failure: backUrl },
+          auto_return: "approved",
+        },
+      });
+
+      await db.collection("event_registrations").doc(result.registrationId).update({
+        mp_preference_id: preference.id,
+      });
+
+      return res.status(201).json({
+        message: "Registro creado",
+        init_point: preference.init_point,
+      });
+    } catch (mpError) {
+      console.error("Error creando la preferencia de Mercado Pago:", mpError);
+
+      await db.collection("event_registrations").doc(result.registrationId).update({
+        status: "cancelled",
+        cancel_reason: "payment_init_failed",
+        updated_at: FieldValue.serverTimestamp(),
+      });
+
+      return res.status(502).json({
+        message: "No se pudo iniciar el pago. Probá de nuevo en unos minutos.",
+      });
+    }
   } catch (error) {
     console.error(error);
 
