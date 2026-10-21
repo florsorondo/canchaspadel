@@ -119,10 +119,10 @@ export default function Step1({ arena, arenaId, booking, updateBooking, setStep 
           {events.length > 0 && (
             <div className="mt-10">
               <h2 className="text-lg sm:text-xl font-black text-[#06122B] mb-1">
-                ¿Preferís sumarte a una cancha libre?
+                ¿Preferís sumarte a un evento?
               </h2>
               <p className="text-sm text-[#6D7580] mb-4">
-                Anotate a un evento abierto sin reservar toda la cancha.
+                Anotate a una cancha libre, clase o torneo sin reservar toda la cancha.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

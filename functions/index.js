@@ -1676,7 +1676,7 @@ app.post("/events", verifyAuth, verifyArenaMember, async (req, res) => {
           court_id,
           date,
           time: slotTime,
-          customer_name: `Cancha libre: ${title}`,
+          customer_name: `Evento: ${title}`,
           customer_email: "",
           customer_phone: "",
           amount: 0,
@@ -1841,7 +1841,7 @@ app.post("/events/:eventId/register", async (req, res) => {
         body: {
           items: [
             {
-              title: `Seña cancha libre: ${result.title}`,
+              title: `Seña evento: ${result.title}`,
               quantity: 1,
               unit_price: result.amountToPay,
               currency_id: "ARS",

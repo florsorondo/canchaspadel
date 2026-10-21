@@ -72,9 +72,9 @@ export default function EventoCanchaLibre() {
     <div className="min-h-screen w-full bg-[#F5F1E9] text-[#06122B] px-5 sm:px-8 py-8">
       <section className="max-w-2xl mx-auto bg-white border border-[#D6D0C8] rounded-lg p-4 sm:p-6">
         <p className="text-[10px] uppercase tracking-[0.3em] text-[#CD9A50] font-semibold mb-1">
-          Cancha libre
+          Evento
         </p>
-        <h1 className="text-xl sm:text-2xl font-black">Anotarse a cancha libre</h1>
+        <h1 className="text-xl sm:text-2xl font-black">Anotarse al evento</h1>
 
         <p className="text-sm text-[#6D7580] mt-1 mb-5">
           Completá tus datos para reservar tu cupo.

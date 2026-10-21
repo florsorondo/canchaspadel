@@ -28,7 +28,7 @@ const emptyForm = {
   address: "",
   opening_time: "",
   closing_time: "",
-  description: "",
+  instagram: "",
   deposit_amount: "",
   days_open: [],
 };
@@ -55,7 +55,7 @@ const MiNegocio = () => {
       address: arena.address || "",
       opening_time: arena.opening_time || "",
       closing_time: arena.closing_time || "",
-      description: arena.description || "",
+      instagram: arena.instagram || "",
       deposit_amount: arena.deposit_amount || "",
       days_open: arena.days_open || [],
     });
@@ -135,22 +135,29 @@ const MiNegocio = () => {
 
         <Input
           label="Apertura"
+          type="time"
           value={form.opening_time}
           onChange={setField("opening_time")}
         />
 
         <Input
           label="Cierre"
+          type="time"
           value={form.closing_time}
           onChange={setField("closing_time")}
         />
 
         <Input
-          label="Descripción"
-          value={form.description}
-          onChange={setField("description")}
+          label="Instagram (sin @)"
+          value={form.instagram}
+          onChange={setField("instagram")}
           full
         />
+
+        <p className="md:col-span-2 text-xs text-[#6D7580] -mt-2">
+          El WhatsApp, la dirección, el horario, los días abiertos y el Instagram se muestran en la
+          página principal.
+        </p>
 
         <div className="col-span-2">
           <Input

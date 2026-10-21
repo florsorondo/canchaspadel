@@ -10,16 +10,71 @@ import patio from "../assets/patio.png";
 import zonasocial from "../assets/zonasocial.png";
 import { useCourts } from "../hooks/useCourts";
 import { useEvents } from "../hooks/useEvents";
+import { useArenaById } from "../hooks/useArenaById";
+import { linkWhatsApp } from "../utils/whatsapp";
 
 const DEFAULT_ARENA_ID = import.meta.env.VITE_DEFAULT_ARENA_ID;
 const BOOKING_URL = DEFAULT_ARENA_ID ? `/booking/${DEFAULT_ARENA_ID}` : null;
 
-const WHATSAPP_TEXTO = "+54 9 2214 55-6677";
-const WHATSAPP_URL = "https://wa.me/5492214556677";
-const DIRECCION = "Iturralde 251, San Vicente";
-const INSTAGRAM_USUARIO = "distritopadel.sv";
-const INSTAGRAM_URL = `https://www.instagram.com/${INSTAGRAM_USUARIO}/`;
-const MAPS_URL = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(DIRECCION)}`;
+const DIAS_ORDEN = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"];
+const DIAS_NOMBRE = {
+  lunes: "lunes",
+  martes: "martes",
+  miercoles: "miércoles",
+  jueves: "jueves",
+  viernes: "viernes",
+  sabado: "sábado",
+  domingo: "domingo",
+};
+
+// ["lunes", ..., "sabado"] → "de lunes a sábado"; días salteados → "lunes, miércoles y viernes"
+const textoDias = (dias = []) => {
+  const indices = DIAS_ORDEN.map((d, i) => (dias.includes(d) ? i : -1)).filter((i) => i >= 0);
+  if (indices.length === 0) return "";
+  if (indices.length === 7) return "todos los días";
+
+  const seguidos = indices.every((d, i) => i === 0 || d === indices.at(i - 1) + 1);
+  const nombres = indices.map((i) => DIAS_NOMBRE[DIAS_ORDEN.at(i)]);
+
+  if (seguidos && nombres.length > 2) return `de ${nombres.at(0)} a ${nombres.at(-1)}`;
+  if (nombres.length === 1) return `los ${nombres.at(0).replace(/([^s])$/, "$1s")}`;
+  return `${nombres.slice(0, -1).join(", ")} y ${nombres.at(-1)}`;
+};
+
+const capitalizar = (texto) => texto.charAt(0).toUpperCase() + texto.slice(1);
+
+// "2213519098" → "+54 9 221 351-9098"
+const formatearTelefono = (telefono) => {
+  const d = String(telefono || "").replace(/\D/g, "").replace(/^549?/, "");
+  if (d.length !== 10) return String(telefono || "");
+  return `+54 9 ${d.slice(0, 3)} ${d.slice(3, 6)}-${d.slice(6)}`;
+};
+
+// Datos de "Mi negocio" que muestra la landing
+const infoDelClub = (arena) => {
+  const dias = textoDias(arena?.days_open);
+  const apertura = arena?.opening_time;
+  const cierre = arena?.closing_time;
+  const horas = apertura && cierre ? `${apertura} a ${cierre}` : "";
+  const direccion = arena?.address || "";
+  const instagram = String(arena?.instagram || "").trim().replace(/^@/, "");
+
+  return {
+    dias,
+    horas,
+    horario: [horas, dias].filter(Boolean).join(" ") || "Consultá por WhatsApp",
+    direccion,
+    mapsUrl: direccion
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+          /san vicente/i.test(direccion) ? direccion : `${direccion}, San Vicente, Buenos Aires`
+        )}`
+      : null,
+    whatsappTexto: formatearTelefono(arena?.phone),
+    whatsappUrl: linkWhatsApp(arena?.phone),
+    instagram,
+    instagramUrl: instagram ? `https://www.instagram.com/${instagram}/` : null,
+  };
+};
 
 const NAV = [
   { href: "#canchas", label: "Canchas" },
@@ -34,24 +89,26 @@ const FOTOS_CANCHA = [cancha1, cancha2];
 export default function Landing() {
   const { courts, loadingCourts } = useCourts(DEFAULT_ARENA_ID);
   const { events } = useEvents(DEFAULT_ARENA_ID);
+  const { arena } = useArenaById(DEFAULT_ARENA_ID);
+  const info = infoDelClub(arena);
 
   const courtsDisponibles = courts.filter((c) => c.available);
   const eventosActivos = (events || []).filter((ev) => ev.status !== "cancelled");
 
   return (
     <div className="min-h-screen bg-[#F1EDE6] text-[#111318] font-sans">
-      <Hero courtsCount={courtsDisponibles.length} />
+      <Hero courtsCount={courtsDisponibles.length} info={info} />
 
       <main>
         <About />
-        <Values />
+        <Values info={info} />
         <Courts courts={courtsDisponibles} loading={loadingCourts} />
         <Events events={eventosActivos} />
         <Club />
-        <Contact />
+        <Contact info={info} />
       </main>
 
-      <Footer />
+      <Footer info={info} />
     </div>
   );
 }
@@ -106,7 +163,7 @@ function Nav() {
   );
 }
 
-function Hero({ courtsCount }) {
+function Hero({ courtsCount, info }) {
   return (
     <header className="relative overflow-hidden bg-[#0B1424]">
       <img
@@ -120,14 +177,16 @@ function Hero({ courtsCount }) {
       <Nav />
 
       <div className="relative z-10 max-w-[1280px] mx-auto px-6 md:px-12 pt-14 md:pt-20 pb-12">
-        <a
-          href={MAPS_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/40 bg-white/10 backdrop-blur-sm text-white text-[11px] font-semibold uppercase tracking-[0.22em] hover:border-white transition"
-        >
-          <MapPin size={14} /> {DIRECCION}
-        </a>
+        {info.direccion && (
+          <a
+            href={info.mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/40 bg-white/10 backdrop-blur-sm text-white text-[11px] font-semibold uppercase tracking-[0.22em] hover:border-white transition"
+          >
+            <MapPin size={14} /> {info.direccion}
+          </a>
+        )}
 
         <h1 className="mt-8 text-white text-[56px] sm:text-[72px] md:text-[96px] leading-[0.92] tracking-[-0.02em]">
           <span className="block font-black">RESERVÁ.</span>
@@ -137,7 +196,7 @@ function Hero({ courtsCount }) {
 
         <p className="mt-7 max-w-[520px] text-white/85 text-[17px] md:text-[19px] leading-relaxed">
           Reservá tu cancha en segundos. Pagá con seña o al contado. Canchas techadas y al aire
-          libre, abiertas todos los días.
+          libre{info.dias ? `, abiertas ${info.dias}` : ""}.
         </p>
 
         <div className="mt-10 flex flex-wrap gap-4">
@@ -152,16 +211,16 @@ function Hero({ courtsCount }) {
           </a>
         </div>
 
-        <InfoBar courtsCount={courtsCount} />
+        <InfoBar courtsCount={courtsCount} info={info} />
       </div>
     </header>
   );
 }
 
-function InfoBar({ courtsCount }) {
+function InfoBar({ courtsCount, info }) {
   const items = [
-    { label: "Horario", value: "07:00 a 23:00 todos los días" },
-    { label: "WhatsApp", value: WHATSAPP_TEXTO, href: WHATSAPP_URL },
+    { label: "Horario", value: info.horario },
+    { label: "WhatsApp", value: info.whatsappTexto || "-", href: info.whatsappUrl },
     {
       label: "Canchas",
       value:
@@ -254,14 +313,18 @@ function About() {
   );
 }
 
-const VALORES = [
-  { icon: Trophy, title: "Primer nivel", text: "Canchas profesionales." },
-  { icon: Building2, title: "Techadas y al aire libre", text: "Para jugar con cualquier clima." },
-  { icon: Smartphone, title: "Reserva online", text: "Pagá con seña o al contado." },
-  { icon: Clock, title: "Todos los días", text: "De 07:00 a 23:00." },
-];
+function Values({ info }) {
+  const VALORES = [
+    { icon: Trophy, title: "Primer nivel", text: "Canchas profesionales." },
+    { icon: Building2, title: "Techadas y al aire libre", text: "Para jugar con cualquier clima." },
+    { icon: Smartphone, title: "Reserva online", text: "Pagá con seña o al contado." },
+    {
+      icon: Clock,
+      title: info.dias ? capitalizar(info.dias.replace(/^de /, "")) : "Horarios",
+      text: info.horas ? `De ${info.horas}.` : "Consultá por WhatsApp.",
+    },
+  ];
 
-function Values() {
   return (
     <section className="relative bg-[#121418] text-white overflow-hidden">
       <img
@@ -347,7 +410,7 @@ function Events({ events }) {
     <section id="eventos" className="pb-16 md:pb-20">
       <div className="max-w-[1280px] mx-auto px-6 md:px-12">
         <h2 className="flex items-center gap-5 text-[18px] md:text-[20px] font-black uppercase tracking-[0.18em] mb-8">
-          Cancha libre
+          Eventos
           <span className="h-px w-12 bg-[#111318]/50" />
         </h2>
 
@@ -415,7 +478,7 @@ function Club() {
   );
 }
 
-function Contact() {
+function Contact({ info }) {
   return (
     <section id="contacto" className="relative overflow-hidden bg-[#0B1424] text-white">
       <img
@@ -433,36 +496,44 @@ function Contact() {
             Reservá tu cancha
           </h2>
           <p className="mt-4 max-w-[420px] text-white/80 text-[16px] leading-relaxed">
-            Por WhatsApp u online. Canchas techadas y al aire libre, abiertas todos los días.
+            Por WhatsApp u online. Canchas techadas y al aire libre
+            {info.dias ? `, abiertas ${info.dias}` : ""}
+            {info.horas ? ` de ${info.horas}` : ""}.
           </p>
 
           <div className="mt-8 flex flex-wrap gap-4">
-            <a
-              href={WHATSAPP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-3 px-7 py-4 rounded-full border border-white/70 text-[15px] font-semibold hover:bg-white hover:text-[#111318] transition"
-            >
-              <MessageCircle size={20} /> {WHATSAPP_TEXTO}
-            </a>
+            {info.whatsappUrl && (
+              <a
+                href={info.whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-3 px-7 py-4 rounded-full border border-white/70 text-[15px] font-semibold hover:bg-white hover:text-[#111318] transition"
+              >
+                <MessageCircle size={20} /> {info.whatsappTexto}
+              </a>
+            )}
 
-            <a
-              href={MAPS_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-3 px-7 py-4 rounded-full text-[15px] font-semibold text-white/85 hover:text-[#C9945A] transition"
-            >
-              <MapPin size={20} /> {DIRECCION}
-            </a>
+            {info.direccion && (
+              <a
+                href={info.mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-3 px-7 py-4 rounded-full text-[15px] font-semibold text-white/85 hover:text-[#C9945A] transition"
+              >
+                <MapPin size={20} /> {info.direccion}
+              </a>
+            )}
 
-            <a
-              href={INSTAGRAM_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-3 px-7 py-4 rounded-full text-[15px] font-semibold text-white/85 hover:text-[#C9945A] transition"
-            >
-              <InstagramIcon size={20} /> @{INSTAGRAM_USUARIO}
-            </a>
+            {info.instagramUrl && (
+              <a
+                href={info.instagramUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-3 px-7 py-4 rounded-full text-[15px] font-semibold text-white/85 hover:text-[#C9945A] transition"
+              >
+                <InstagramIcon size={20} /> @{info.instagram}
+              </a>
+            )}
           </div>
         </div>
 
@@ -471,7 +542,7 @@ function Contact() {
   );
 }
 
-function Footer() {
+function Footer({ info }) {
   return (
     <footer className="bg-[#0E1013] text-white">
       <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-8 flex flex-col md:flex-row items-center justify-between gap-6">
@@ -486,24 +557,28 @@ function Footer() {
         </div>
 
         <div className="flex items-center gap-3">
-          <a
-            href={INSTAGRAM_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Instagram de Distrito Padel"
-            className="w-10 h-10 rounded-full border border-white/40 flex items-center justify-center hover:border-[#C9945A] hover:text-[#C9945A] transition"
-          >
-            <InstagramIcon size={18} />
-          </a>
-          <a
-            href={WHATSAPP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Escribinos por WhatsApp"
-            className="w-10 h-10 rounded-full border border-white/40 flex items-center justify-center hover:border-[#C9945A] hover:text-[#C9945A] transition"
-          >
-            <MessageCircle size={18} />
-          </a>
+          {info.instagramUrl && (
+            <a
+              href={info.instagramUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Instagram de Distrito Padel"
+              className="w-10 h-10 rounded-full border border-white/40 flex items-center justify-center hover:border-[#C9945A] hover:text-[#C9945A] transition"
+            >
+              <InstagramIcon size={18} />
+            </a>
+          )}
+          {info.whatsappUrl && (
+            <a
+              href={info.whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Escribinos por WhatsApp"
+              className="w-10 h-10 rounded-full border border-white/40 flex items-center justify-center hover:border-[#C9945A] hover:text-[#C9945A] transition"
+            >
+              <MessageCircle size={18} />
+            </a>
+          )}
         </div>
       </div>
     </footer>
