@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Tab } from "../components/dashboard/shared.jsx";
+import { Tab, SecondaryButton } from "../components/dashboard/shared.jsx";
 import Reservas from "../components/dashboard/Reservas.jsx";
 import Canchas from "../components/dashboard/Canchas.jsx";
 import Ingresos from "../components/dashboard/Ingresos.jsx";
@@ -7,14 +7,26 @@ import MiNegocio from "../components/dashboard/MiNegocio.jsx";
 import CrearEvento from "../components/dashboard/CrearEventos.jsx";
 import Cupones from "../components/dashboard/Cupones.jsx";
 import Clientes from "../components/dashboard/Clientes.jsx";
+import Equipo from "../components/dashboard/Equipo.jsx";
 import { auth } from "../firebase.js";
 import { useNavigate } from "react-router-dom";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import Loader from "../components/Loader.jsx";
-import { ArenaProvider } from "../hooks/useArena";
+import { ArenaProvider, useArena } from "../hooks/useArena";
+
+// ownerOnly: pestañas que un empleado no ve (el backend también lo bloquea)
+const TABS = [
+  { id: "reservas", label: "Reservas", title: "Panel de administración", Component: Reservas },
+  { id: "clientes", label: "Clientes", title: "Clientes", Component: Clientes },
+  { id: "canchas", label: "Canchas", title: "Canchas", Component: Canchas },
+  { id: "negocio", label: "Mi negocio", title: "Mi negocio", Component: MiNegocio },
+  { id: "ingresos", label: "Cobros", title: "Cobros", Component: Ingresos, ownerOnly: true },
+  { id: "crear-evento", label: "Cancha libre", title: "Cancha libre", Component: CrearEvento },
+  { id: "cupones", label: "Cupones", title: "Cupones", Component: Cupones },
+  { id: "equipo", label: "Equipo", title: "Equipo", Component: Equipo, ownerOnly: true },
+];
 
 const Dashboard = () => {
-  const [tab, setTab] = useState("reservas");
   const navigate = useNavigate();
   const [loadingAuth, setLoadingAuth] = useState(true);
 
@@ -41,96 +53,80 @@ const Dashboard = () => {
 
   return (
     <ArenaProvider>
-      <div className="relative min-h-screen w-full bg-[#F5F1E9] font-sans">
-        <div className="w-full min-h-screen xl:p-4 2xl:p-6">
-          <div className="w-full min-h-screen xl:min-h-[calc(100vh-48px)] max-w-[1920px] mx-auto bg-white xl:rounded-lg border-0 xl:border border-[#D6D0C8] shadow-sm">
-            <div className="bg-[#06122B] text-[#F5F1E9] px-5 sm:px-8 py-5 flex justify-between items-center xl:rounded-t-lg">
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.35em] text-[#CD9A50] font-semibold mb-1">
-                  Distrito San Vicente
-                </p>
-                <h1 className="text-xl sm:text-2xl font-black tracking-tight">
-                  {tab === "reservas" && "Panel de administración"}
-                  {tab === "canchas" && "Canchas"}
-                  {tab === "negocio" && "Mi negocio"}
-                  {tab === "ingresos" && "Cobros"}
-                  {tab === "crear-evento" && "Cancha libre"}
-                  {tab === "cupones" && "Cupones"}
-                  {tab === "clientes" && "Clientes"}
-                </h1>
-              </div>
+      <DashboardContent onLogout={handleLogout} />
+    </ArenaProvider>
+  );
+};
 
-              <div className="flex items-center gap-3">
-                <span className="hidden sm:inline bg-white/10 border border-white/15 px-4 py-1.5 rounded-full text-xs uppercase tracking-[0.18em] font-semibold">
-                  Dueño
-                </span>
+const DashboardContent = ({ onLogout }) => {
+  const { isOwner, loadingArena, errorArena } = useArena();
+  const [tab, setTab] = useState("reservas");
 
-                <button
-                  onClick={handleLogout}
-                  className="border border-white/20 px-4 py-1.5 rounded-full text-xs uppercase tracking-[0.18em] font-semibold hover:bg-white/10 transition"
-                >
-                  Cerrar sesión
-                </button>
-              </div>
+  if (loadingArena) {
+    return <Loader />;
+  }
+
+  if (errorArena) {
+    return (
+      <div className="min-h-screen bg-[#F5F1E9] flex items-center justify-center p-6">
+        <div className="bg-white border border-[#D6D0C8] rounded-lg p-8 max-w-md text-center">
+          <h1 className="text-2xl font-black text-[#06122B] mb-3">Sin acceso al panel</h1>
+          <p className="text-[#6D7580] mb-6">{errorArena}</p>
+          <SecondaryButton onClick={onLogout}>Cerrar sesión</SecondaryButton>
+        </div>
+      </div>
+    );
+  }
+
+  const tabs = TABS.filter((t) => isOwner || !t.ownerOnly);
+  const activeTab = tabs.find((t) => t.id === tab) || tabs[0];
+  const ActiveComponent = activeTab.Component;
+
+  return (
+    <div className="relative min-h-screen w-full bg-[#F5F1E9] font-sans">
+      <div className="w-full min-h-screen xl:p-4 2xl:p-6">
+        <div className="w-full min-h-screen xl:min-h-[calc(100vh-48px)] max-w-[1920px] mx-auto bg-white xl:rounded-lg border-0 xl:border border-[#D6D0C8] shadow-sm">
+          <div className="bg-[#06122B] text-[#F5F1E9] px-5 sm:px-8 py-5 flex justify-between items-center xl:rounded-t-lg">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.35em] text-[#CD9A50] font-semibold mb-1">
+                Distrito San Vicente
+              </p>
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight">
+                {activeTab.title}
+              </h1>
             </div>
 
-            <div className="flex gap-6 sm:gap-9 px-5 sm:px-8 py-4 border-b border-[#D6D0C8] overflow-x-auto">
-              <Tab
-                label="Reservas"
-                active={tab === "reservas"}
-                onClick={() => setTab("reservas")}
-              />
+            <div className="flex items-center gap-3">
+              <span className="hidden sm:inline bg-white/10 border border-white/15 px-4 py-1.5 rounded-full text-xs uppercase tracking-[0.18em] font-semibold">
+                {isOwner ? "Dueño" : "Empleado"}
+              </span>
 
-              <Tab
-                label="Clientes"
-                active={tab === "clientes"}
-                onClick={() => setTab("clientes")}
-              />
-
-              <Tab
-                label="Canchas"
-                active={tab === "canchas"}
-                onClick={() => setTab("canchas")}
-              />
-
-              <Tab
-                label="Mi negocio"
-                active={tab === "negocio"}
-                onClick={() => setTab("negocio")}
-              />
-
-              <Tab
-                label="Cobros"
-                active={tab === "ingresos"}
-                onClick={() => setTab("ingresos")}
-              />
-
-              <Tab
-                label="Cancha libre"
-                active={tab === "crear-evento"}
-                onClick={() => setTab("crear-evento")}
-              />
-
-              <Tab
-                label="Cupones"
-                active={tab === "cupones"}
-                onClick={() => setTab("cupones")}
-              />
+              <button
+                onClick={onLogout}
+                className="border border-white/20 px-4 py-1.5 rounded-full text-xs uppercase tracking-[0.18em] font-semibold hover:bg-white/10 transition"
+              >
+                Cerrar sesión
+              </button>
             </div>
+          </div>
 
-            <div className="max-w-[1700px] mx-auto">
-              {tab === "reservas" && <Reservas />}
-              {tab === "canchas" && <Canchas />}
-              {tab === "negocio" && <MiNegocio />}
-              {tab === "ingresos" && <Ingresos />}
-              {tab === "crear-evento" && <CrearEvento />}
-              {tab === "cupones" && <Cupones />}
-              {tab === "clientes" && <Clientes />}
-            </div>
+          <div className="flex gap-6 sm:gap-9 px-5 sm:px-8 py-4 border-b border-[#D6D0C8] overflow-x-auto">
+            {tabs.map((t) => (
+              <Tab
+                key={t.id}
+                label={t.label}
+                active={activeTab.id === t.id}
+                onClick={() => setTab(t.id)}
+              />
+            ))}
+          </div>
+
+          <div className="max-w-[1700px] mx-auto">
+            <ActiveComponent />
           </div>
         </div>
       </div>
-    </ArenaProvider>
+    </div>
   );
 };
 
