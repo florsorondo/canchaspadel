@@ -1,35 +1,54 @@
-import React from "react";
 import { Link } from "react-router-dom";
+import { ArrowRight, Building2, Clock, MapPin, MessageCircle, Smartphone, Trophy } from "lucide-react";
 import LOGODISTRITO from "../assets/LOGODISTRITO.png";
-import DIBUJOAZUL from "../assets/DIBUJOAZUL.png";
 import FOTOFONDO from "../assets/FOTOFONDO.png";
 import fotochicos from "../assets/fotochicos.png";
+import cancha1 from "../assets/cancha1.png";
+import cancha2 from "../assets/cancha2.png";
+import cafeteria from "../assets/cafeteria.png";
+import patio from "../assets/patio.png";
+import zonasocial from "../assets/zonasocial.png";
 import { useCourts } from "../hooks/useCourts";
 import { useEvents } from "../hooks/useEvents";
 
+const DEFAULT_ARENA_ID = import.meta.env.VITE_DEFAULT_ARENA_ID;
+const BOOKING_URL = DEFAULT_ARENA_ID ? `/booking/${DEFAULT_ARENA_ID}` : null;
+
+const WHATSAPP_TEXTO = "+54 9 2214 55-6677";
+const WHATSAPP_URL = "https://wa.me/5492214556677";
+const DIRECCION = "Iturralde 251, San Vicente";
+const INSTAGRAM_USUARIO = "distritopadel.sv";
+const INSTAGRAM_URL = `https://www.instagram.com/${INSTAGRAM_USUARIO}/`;
+const MAPS_URL = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(DIRECCION)}`;
+
 const NAV = [
   { href: "#canchas", label: "Canchas" },
-  { href: "#eventos", label: "Cancha libre" },
-  { href: "#nosotros", label: "El Club" },
+  { href: "#club", label: "El club" },
+  { href: "#nosotros", label: "Nosotros" },
+  { href: "#contacto", label: "Ubicación" },
 ];
 
-const DEFAULT_ARENA_ID = import.meta.env.VITE_DEFAULT_ARENA_ID;
+// Si una cancha no tiene foto cargada, se usa una de estas
+const FOTOS_CANCHA = [cancha1, cancha2];
 
 export default function Landing() {
   const { courts, loadingCourts } = useCourts(DEFAULT_ARENA_ID);
   const { events } = useEvents(DEFAULT_ARENA_ID);
 
   const courtsDisponibles = courts.filter((c) => c.available);
+  const eventosActivos = (events || []).filter((ev) => ev.status !== "cancelled");
 
   return (
-    <div className="min-h-screen bg-[#F5F1E9] text-[#06122B] font-display">
-      <Nav />
+    <div className="min-h-screen bg-[#F1EDE6] text-[#111318] font-sans">
+      <Hero courtsCount={courtsDisponibles.length} />
 
       <main>
-        <Hero courtsCount={courtsDisponibles.length} />
-        <Courts courts={courtsDisponibles} loading={loadingCourts} />
-        <Events events={events} />
         <About />
+        <Values />
+        <Courts courts={courtsDisponibles} loading={loadingCourts} />
+        <Events events={eventosActivos} />
+        <Club />
+        <Contact />
       </main>
 
       <Footer />
@@ -37,142 +56,113 @@ export default function Landing() {
   );
 }
 
+/* Botón "Reservar": lleva al flujo de reserva, o a contacto si no hay complejo configurado */
+function ReservarLink({ className, children }) {
+  if (BOOKING_URL) {
+    return (
+      <Link to={BOOKING_URL} className={className}>
+        {children}
+      </Link>
+    );
+  }
+
+  return (
+    <a href="#contacto" className={className}>
+      {children}
+    </a>
+  );
+}
+
+function Logo({ className = "" }) {
+  return (
+    <a href="#" className={`flex items-center gap-3 ${className}`}>
+      <img src={LOGODISTRITO} alt="Distrito Padel San Vicente" className="w-14 h-14 object-contain" />
+      <span className="flex flex-col leading-none text-white">
+        <span className="text-[15px] font-black tracking-[0.08em]">DISTRITO</span>
+        <span className="text-[11px] font-bold tracking-[0.3em] mt-1">PADEL</span>
+        <span className="text-[9px] font-semibold tracking-[0.25em] mt-1 text-white/70">SAN VICENTE</span>
+      </span>
+    </a>
+  );
+}
+
 function Nav() {
   return (
-    <nav className="sticky top-0 z-50 w-full bg-[#F5F1E9]/90 backdrop-blur-md border-b border-[#DED8CE]">
-      <div className="max-w-[1280px] mx-auto px-10 md:px-12 h-[120px] flex items-center justify-between">
-        <a href="#" className="flex items-center gap-3">
-          <img
-            src={LOGODISTRITO}
-            alt="Distrito San Vicente Padel"
-            className="w-20 h-20 rounded-full bg-white object-cover"
-          />
+    <nav className="relative z-20 max-w-[1280px] mx-auto px-6 md:px-12 pt-6 flex items-center justify-between gap-6">
+      <Logo />
 
-          <div className="flex flex-col">
-            <span className="text-[20px] font-black tracking-tight leading-none">
-              DISTRITO
-            </span>
-            <span className="text-[16px] font-mono tracking-[0.30em] font-black uppercase mt-1">
-              San Vicente Padel
-            </span>
-          </div>
-        </a>
-
-        <div className="hidden md:flex items-center gap-9 text-[16px] font-medium uppercase tracking-wide">
-          {NAV.map((n) => (
-            <a key={n.href} href={n.href} className="hover:text-[#CD9A50]">
-              {n.label}
-            </a>
-          ))}
-
-          {DEFAULT_ARENA_ID ? (
-            <Link
-              to={`/booking/${DEFAULT_ARENA_ID}`}
-              className="px-7 py-3 bg-[#06122B] text-[#F5F1E9] rounded-full hover:opacity-90 transition"
-            >
-              Reservar
-            </Link>
-          ) : (
-            <a
-              href="#contacto"
-              className="px-7 py-3 bg-[#06122B] text-[#F5F1E9] rounded-full hover:opacity-90 transition"
-            >
-              Reservar
-            </a>
-          )}
-        </div>
+      <div className="hidden md:flex items-center gap-10 text-[12px] font-semibold uppercase tracking-[0.18em] text-white/85">
+        {NAV.map((n) => (
+          <a key={n.href} href={n.href} className="hover:text-[#C9945A] transition">
+            {n.label}
+          </a>
+        ))}
       </div>
+
+      <ReservarLink className="inline-flex items-center gap-3 px-6 py-3 rounded-full bg-[#F1EDE6] text-[#111318] text-[12px] font-bold uppercase tracking-[0.18em] hover:bg-white transition">
+        Reservar <ArrowRight size={16} />
+      </ReservarLink>
     </nav>
   );
 }
 
-
 function Hero({ courtsCount }) {
   return (
-    <section className="relative pt-14 pb-16 overflow-hidden">
-      <div className="absolute inset-0 z-0">
-        <img
+    <header className="relative overflow-hidden bg-[#0B1424]">
+      <img
         src={FOTOFONDO}
-        alt="Distrito San Vicente"
-        className="w-full h-full object-cover"
-        />
+        alt="Canchas y club house de Distrito Padel de noche"
+        className="absolute inset-0 w-full h-full object-cover object-[70%_center]"
+      />
+      <div className="absolute inset-0 bg-gradient-to-r from-[#070C17]/90 via-[#070C17]/60 to-[#070C17]/15" />
+      <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-[#070C17]/70 to-transparent" />
 
-      <div className="absolute inset-0 bg-[#06122B]/55" />
+      <Nav />
 
-     <div className="absolute inset-0 bg-gradient-to-r from-[#06122B]/88 via-[#06122B]/55 to-transparent" />
-     </div>
-      
-      <div className="absolute right-[-180px] top-[45%] -translate-y-1/2 hidden lg:block pointer-events-none opacity-[0.12]">
-        <img
-          src={DIBUJOAZUL}
-          alt=""
-          className="w-[520px] xl:w-[680px] object-contain"
-          
-        />
-      </div>
+      <div className="relative z-10 max-w-[1280px] mx-auto px-6 md:px-12 pt-14 md:pt-20 pb-12">
+        <a
+          href={MAPS_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/40 bg-white/10 backdrop-blur-sm text-white text-[11px] font-semibold uppercase tracking-[0.22em] hover:border-white transition"
+        >
+          <MapPin size={14} /> {DIRECCION}
+        </a>
 
-      <div className="relative z-10 max-w-[1280px] mx-auto px-6 md:px-12">
-        <div className="max-w-[760px]">
-          <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#ECEBE7] border border-[#011142] mb-8">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#011142]" />
-            <span className="text-[10px] font-mono font-bold text-[#011142] uppercase tracking-[0.25em]">
-              Itaurralde 251, San Vicente
-            </span>
-          </div>
+        <h1 className="mt-8 text-white text-[56px] sm:text-[72px] md:text-[96px] leading-[0.92] tracking-[-0.02em]">
+          <span className="block font-black">RESERVÁ.</span>
+          <span className="block italic font-light">JUGÁ.</span>
+          <span className="block font-black">DISFRUTÁ.</span>
+        </h1>
 
-          <h1 className="text-[58px] md:text-[86px] font-black tracking-tight leading-[0.92] mb-8 text-white">
-            Reservá.{" "}
-            <span className="text-white italic font-serif font-normal drop-shadow-[0_0_20px_rgba(61,90,128,0.15)]">
-              Jugá.
-            </span>
-            <br />
-            Disfrutá.
-          </h1>
+        <p className="mt-7 max-w-[520px] text-white/85 text-[17px] md:text-[19px] leading-relaxed">
+          Reservá tu cancha en segundos. Pagá con seña o al contado. Canchas techadas y al aire
+          libre, abiertas todos los días.
+        </p>
 
-          <p className="text-[18px] md:text-[21px] text-white/80 font-serif italic max-w-[680px] mb-10 leading-relaxed">
-            Reservá tu cancha en segundos. Pagá con seña o al contado. Canchas
-            techadas y al aire libre, abiertas todos los días.
-          </p>
-
-          <div className="flex flex-wrap gap-4 items-center mb-14">
-            {DEFAULT_ARENA_ID ? (
-              <Link
-                to={`/booking/${DEFAULT_ARENA_ID}`}
-                className="min-w-[220px] h-[58px] px-8 bg-[#CD9A50] text-[#06122B] font-extrabold uppercase tracking-[0.22em] text-[13px] rounded-[4px] flex items-center justify-center gap-2 hover:opacity-90 transition"
-              >
-                Reservar ahora <span>→</span>
-              </Link>
-            ) : (
-              <a
-                href="#contacto"
-                className="min-w-[220px] h-[58px] px-8 bg-[#CD9A50] text-[#06122B] font-extrabold uppercase tracking-[0.22em] text-[13px] rounded-[4px] flex items-center justify-center gap-2 hover:opacity-90 transition"
-              >
-                Reservar ahora <span>→</span>
-              </a>
-            )}
-
-            <a
-              href="#canchas"
-              className="min-w-[220px] h-[58px] px-8 border border-white/30 text-white font-extrabold uppercase tracking-[0.22em] text-[13px] rounded-[4px] flex items-center justify-center hover:border-white transition"
-            >
-              Ver canchas
-            </a>
-          </div>
+        <div className="mt-10 flex flex-wrap gap-4">
+          <ReservarLink className="inline-flex items-center gap-4 px-7 py-4 rounded-full bg-[#F1EDE6] text-[#111318] text-[12px] font-bold uppercase tracking-[0.2em] hover:bg-white transition">
+            Reservar ahora <ArrowRight size={16} />
+          </ReservarLink>
+          <a
+            href="#canchas"
+            className="inline-flex items-center gap-4 px-7 py-4 rounded-full border border-white/70 text-white text-[12px] font-bold uppercase tracking-[0.2em] hover:bg-white hover:text-[#111318] transition"
+          >
+            Ver canchas
+          </a>
         </div>
-        
 
         <InfoBar courtsCount={courtsCount} />
       </div>
-    </section>
+    </header>
   );
 }
 
 function InfoBar({ courtsCount }) {
   const items = [
-    { n: "01", label: "Horario", value: "07:00 — 23:00 todos los días" },
-    { n: "02", label: "Whatsapp", value: "+54 9 2214 55-6677" },
+    { label: "Horario", value: "07:00 a 23:00 todos los días" },
+    { label: "WhatsApp", value: WHATSAPP_TEXTO, href: WHATSAPP_URL },
     {
-      n: "03",
       label: "Canchas",
       value:
         courtsCount > 0
@@ -182,95 +172,166 @@ function InfoBar({ courtsCount }) {
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 border border-[#D6D0C8]">
-      {items.map((item) => (
-        <div
-          key={item.n}
-          className="min-h-[105px] px-7 py-6 flex items-center gap-6 border-b md:border-b-0 md:border-r last:border-r-0 border-[#D6D0C8]"
-        >
-          <span className="text-[#CD9A50] font-mono text-xs">{item.n}/</span>
+    <div className="mt-14 grid grid-cols-1 md:grid-cols-3 rounded-lg border border-white/20 bg-[#070C17]/45 backdrop-blur-md text-white">
+      {items.map((item, i) => {
+        const contenido = (
+          <>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">{item.label}</p>
+            <p className="mt-1 text-[16px] font-bold">{item.value}</p>
+          </>
+        );
 
-          <div>
-            <p className="text-[12px] uppercase tracking-wider text-white/80 mb-2">
-              {item.label}
-            </p>
-            <p className="text-[17px] font-extrabold text-white/80">
-              {item.value}
-            </p>
+        const clases = `px-6 py-5 ${i > 0 ? "border-t md:border-t-0 md:border-l border-white/15" : ""}`;
+
+        return item.href ? (
+          <a key={item.label} href={item.href} target="_blank" rel="noopener noreferrer" className={`${clases} hover:bg-white/5 transition`}>
+            {contenido}
+          </a>
+        ) : (
+          <div key={item.label} className={clases}>
+            {contenido}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-function ImagePlaceholder({ src, alt, className }) {
+function Eyebrow({ children, light = false }) {
   return (
-    <div className={`relative overflow-hidden bg-[#D9D4CC] ${className}`}>
-      {src ? (
-        <img src={src} alt={alt} className="w-full h-full object-cover" />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center text-[#8A847C] uppercase tracking-[0.3em] text-xs">
-          Tu imagen
+    <p
+      className={`flex items-center gap-4 text-[11px] font-semibold uppercase tracking-[0.3em] ${
+        light ? "text-white/70" : "text-[#8C6A44]"
+      }`}
+    >
+      {children}
+      <span className={`h-px w-10 ${light ? "bg-white/50" : "bg-[#8C6A44]"}`} />
+    </p>
+  );
+}
+
+function About() {
+  return (
+    <section id="nosotros" className="py-16 md:py-20">
+      <div className="max-w-[1280px] mx-auto px-6 md:px-12 grid md:grid-cols-2 gap-10 md:gap-14 items-center">
+        <div>
+          <Eyebrow>Nosotros</Eyebrow>
+
+          <h2 className="mt-8 text-[40px] md:text-[54px] font-black leading-[0.98] tracking-[-0.02em] uppercase">
+            Donde el deporte se encuentra con el{" "}
+            <span className="normal-case italic font-medium text-[#C9945A]">estilo de vida.</span>
+          </h2>
+
+          <div className="mt-7 max-w-[480px] space-y-4 text-[#5C5F66] text-[16px] leading-relaxed">
+            <p>
+              Distrito San Vicente nació de la pasión de tres amigos de toda la vida por el pádel y de
+              una idea simple: crear mucho más que un club. Queríamos construir un espacio donde el
+              juego, la competencia y los buenos momentos se vivan de una manera distinta.
+            </p>
+            <p>
+              Combinamos canchas de primer nivel, un ambiente cálido y una experiencia pensada para
+              disfrutar antes, durante y después de cada partido.
+            </p>
+          </div>
+
+          <a
+            href="#club"
+            className="mt-9 inline-flex items-center gap-3 px-7 py-4 rounded-full bg-[#111318] text-white text-[12px] font-bold uppercase tracking-[0.2em] hover:bg-[#2A2D35] transition"
+          >
+            Conocé más <ArrowRight size={16} />
+          </a>
         </div>
-      )}
-    </div>
+
+        <div className="overflow-hidden">
+          <img
+            src={fotochicos}
+            alt="Los tres fundadores de Distrito Padel con sus paletas"
+            className="w-full aspect-[4/3.6] object-cover"
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const VALORES = [
+  { icon: Trophy, title: "Primer nivel", text: "Canchas profesionales." },
+  { icon: Building2, title: "Techadas y al aire libre", text: "Para jugar con cualquier clima." },
+  { icon: Smartphone, title: "Reserva online", text: "Pagá con seña o al contado." },
+  { icon: Clock, title: "Todos los días", text: "De 07:00 a 23:00." },
+];
+
+function Values() {
+  return (
+    <section className="relative bg-[#121418] text-white overflow-hidden">
+      <img
+        src={LOGODISTRITO}
+        alt=""
+        aria-hidden="true"
+        className="absolute -right-10 top-1/2 -translate-y-1/2 w-[260px] opacity-[0.06] pointer-events-none hidden md:block"
+      />
+
+      <div className="relative max-w-[1280px] mx-auto px-6 md:px-12 py-12 grid grid-cols-2 md:grid-cols-4 gap-y-10">
+        {VALORES.map(({ icon: Icon, title, text }, i) => (
+          <div
+            key={title}
+            className={`flex flex-col items-center text-center px-4 ${
+              i > 0 ? "md:border-l md:border-white/15" : ""
+            }`}
+          >
+            <span className="w-14 h-14 rounded-full border border-white/60 flex items-center justify-center">
+              <Icon size={24} strokeWidth={1.4} />
+            </span>
+            <h3 className="mt-4 text-[13px] font-bold uppercase tracking-[0.2em]">{title}</h3>
+            <p className="mt-1 text-[13px] text-white/70 max-w-[180px]">{text}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
 function Courts({ courts, loading }) {
   return (
-    <section id="canchas" className="py-20 bg-[#06122B]">
+    <section id="canchas" className="py-16 md:py-20">
       <div className="max-w-[1280px] mx-auto px-6 md:px-12">
-        <div className="flex justify-between items-end mb-14 gap-6 flex-wrap">
-          <h2 className="text-[#F5F1E9] text-[42px] md:text-[58px] font-black tracking-tight">
-            NUESTRAS CANCHAS
+        <div className="flex items-center justify-between gap-6 flex-wrap mb-8">
+          <h2 className="flex items-center gap-5 text-[18px] md:text-[20px] font-black uppercase tracking-[0.18em]">
+            Nuestras canchas
+            <span className="h-px w-12 bg-[#111318]/50" />
           </h2>
+
+          <ReservarLink className="inline-flex items-center gap-3 px-6 py-3 rounded-full border border-[#111318] text-[11px] font-bold uppercase tracking-[0.2em] hover:bg-[#111318] hover:text-white transition">
+            Reservar cancha <ArrowRight size={15} />
+          </ReservarLink>
         </div>
 
         {loading ? (
-          <p className="text-[#F5F1E9]/60">Cargando canchas...</p>
+          <p className="text-[#5C5F66]">Cargando canchas...</p>
         ) : courts.length === 0 ? (
-          <p className="text-[#F5F1E9]/60">
-            Todavía no hay canchas cargadas.
-          </p>
+          <p className="text-[#5C5F66]">Todavía no hay canchas cargadas.</p>
         ) : (
-          <div className="grid md:grid-cols-2 gap-10">
-            {courts.map((c) => (
-              <article key={c.id} className="group">
-                <div className="relative w-full aspect-[4/3] overflow-hidden bg-white/5">
-                  <ImagePlaceholder
-                    src={c.image_url}
+          <div className="grid sm:grid-cols-2 gap-6 md:gap-8">
+            {courts.map((c, i) => (
+              <ReservarLink key={c.id} className="group block rounded-md overflow-hidden bg-[#E2DDD4]">
+                <div className="aspect-[16/9] overflow-hidden">
+                  <img
+                    src={c.image_url || FOTOS_CANCHA[i % FOTOS_CANCHA.length]}
                     alt={c.name}
-                    className="w-full h-full object-cover transition-all duration-700 group-hover:scale-105"
+                    className="w-full h-full object-cover transition duration-700 group-hover:scale-105"
                   />
+                </div>
 
-                  <span className="absolute top-5 left-5 inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#F5F1E9] text-[#06122B] text-[10px] font-mono font-bold uppercase tracking-widest">
-                    <span className="w-2 h-2 rounded-full bg-green-500" />
-                    Disponible
+                <div className="flex items-center justify-between gap-4 px-5 py-4">
+                  <span>
+                    <span className="block text-[13px] font-bold uppercase tracking-[0.2em]">{c.name}</span>
+                    <span className="block text-[12px] text-[#5C5F66] mt-0.5">
+                      {c.description || "Cancha de pádel"} · ${Number(c.price || 0).toLocaleString("es-AR")} el turno
+                    </span>
                   </span>
+                  <ArrowRight size={18} className="shrink-0 transition group-hover:translate-x-1" />
                 </div>
-
-                <div className="flex justify-between items-start gap-4 mt-5">
-                  <div>
-                    <h3 className="text-[#F5F1E9] text-xl font-bold mb-2">
-                      {c.name}
-                    </h3>
-                    <p className="text-[#F5F1E9]/50 text-[11px] uppercase tracking-widest">
-                      {c.description || "Cancha de pádel"}
-                    </p>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <p className="text-[#CD9A50] font-mono text-lg">
-                      ${Number(c.price || 0).toLocaleString()}
-                    </p>
-                    <p className="text-[#F5F1E9]/40 text-[10px] uppercase">
-                      por hora
-                    </p>
-                  </div>
-                </div>
-              </article>
+              </ReservarLink>
             ))}
           </div>
         )}
@@ -280,31 +341,34 @@ function Courts({ courts, loading }) {
 }
 
 function Events({ events }) {
-  if (!events || events.length === 0) return null;
+  if (events.length === 0) return null;
 
   return (
-    <section id="eventos" className="py-20 bg-[#F5F1E9]">
+    <section id="eventos" className="pb-16 md:pb-20">
       <div className="max-w-[1280px] mx-auto px-6 md:px-12">
-        <h2 className="text-[20px] font-bold font-mono text-[#CD9A50] uppercase tracking-[0.35em] mb-8">
+        <h2 className="flex items-center gap-5 text-[18px] md:text-[20px] font-black uppercase tracking-[0.18em] mb-8">
           Cancha libre
+          <span className="h-px w-12 bg-[#111318]/50" />
         </h2>
 
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {events.map((ev) => (
             <Link
               key={ev.id}
               to={`/cancha-libre/${ev.id}`}
-              className="block bg-white border border-[#DED8CE] rounded-lg p-6 hover:border-[#06122B] transition"
+              className="group flex items-center justify-between gap-4 rounded-md bg-[#121418] text-white px-6 py-5 hover:bg-[#1E2128] transition"
             >
-              <h3 className="text-xl font-bold text-[#06122B]">
-                {ev.title}
-              </h3>
-              <p className="text-[#6D7580] mt-1">
-                {ev.date} · {ev.time}{ev.end_time ? ` a ${ev.end_time}` : ""}
-              </p>
-              <p className="text-[#CD9A50] font-mono mt-2">
-                ${Number(ev.price || 0).toLocaleString()} por persona
-              </p>
+              <span>
+                <span className="block text-[15px] font-bold">{ev.title}</span>
+                <span className="block text-[13px] text-white/70 mt-1">
+                  {ev.date} · {ev.time}
+                  {ev.end_time ? ` a ${ev.end_time}` : ""}
+                </span>
+                <span className="block text-[13px] text-[#C9945A] mt-1">
+                  ${Number(ev.price || 0).toLocaleString("es-AR")} por persona
+                </span>
+              </span>
+              <ArrowRight size={18} className="shrink-0 transition group-hover:translate-x-1" />
             </Link>
           ))}
         </div>
@@ -313,38 +377,95 @@ function Events({ events }) {
   );
 }
 
-function About() {
+const ESPACIOS = [
+  { label: "Cafetería", src: cafeteria, position: "object-center" },
+  { label: "Patio", src: patio, position: "object-[30%_center]" },
+  { label: "Zona social", src: zonasocial, position: "object-[70%_center]" },
+];
+
+function Club() {
   return (
-    <section id="nosotros" className="py-20 bg-[#F5F1E9]">
-      <div className="max-w-[1280px] mx-auto px-6 md:px-12 grid md:grid-cols-2 gap-14 items-center">
-        <ImagePlaceholder
-          src={fotochicos}
-          alt="Club house de Distrito San Vicente Padel"
-          className="w-full aspect-[1/1]"
-        />
-
+    <section id="club" className="pb-16 md:pb-20">
+      <div className="max-w-[1280px] mx-auto px-6 md:px-12 grid lg:grid-cols-[260px_minmax(0,1fr)] gap-8 lg:gap-10 items-start">
         <div>
-          <h2 className="text-[20px] font-bold font-mono text-[#CD9A50] uppercase tracking-[0.35em] mb-8">
-            Nosotros
+          <span className="block h-px w-10 bg-[#111318]" />
+          <h2 className="mt-5 text-[24px] md:text-[28px] font-black uppercase leading-[1.1] tracking-[0.04em]">
+            Un club pensado para vos
           </h2>
+          <span className="block h-px w-10 bg-[#111318] mt-5" />
+          <p className="mt-5 text-[14px] text-[#5C5F66] leading-relaxed max-w-[240px]">
+            Más que canchas, un espacio para disfrutar antes, durante y después de cada partido.
+          </p>
+        </div>
 
-          <h3 className="text-[38px] md:text-[52px] font-black tracking-tight leading-[1.05] mb-8">
-            Donde el deporte se encuentra con el{" "}
-            <span className="font-serif italic text-[#CD9A50] font-normal">
-              estilo de vida.
-            </span>
-          </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {ESPACIOS.map((e) => (
+            <figure key={e.label} className="m-0">
+              <div className="aspect-[4/3.4] overflow-hidden">
+                <img src={e.src} alt={e.label} className={`w-full h-full object-cover ${e.position}`} />
+              </div>
+              <figcaption className="mt-3 text-[11px] font-bold uppercase tracking-[0.2em]">
+                {e.label}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
 
-          <div className="space-y-6 text-[#6D7580] font-serif text-[18px] md:text-[20px] leading-relaxed">
-            <p>
-              Distrito San Vicente nació de la pasión de tres amigos de toda la vida por el pádel y de una idea simple: crear mucho más que un club. Queríamos construir un espacio donde el juego, la competencia y los buenos momentos se vivan de una manera distinta.
-            </p>
+function Contact() {
+  return (
+    <section id="contacto" className="relative overflow-hidden bg-[#0B1424] text-white">
+      <img
+        src={cancha1}
+        alt=""
+        aria-hidden="true"
+        className="absolute inset-0 w-full h-full object-cover object-bottom blur-[3px] scale-105"
+      />
+      <div className="absolute inset-0 bg-gradient-to-r from-[#070C17]/95 via-[#070C17]/75 to-[#070C17]/40" />
 
-            <p>
-             Combinamos canchas de primer nivel, un ambiente cálido y una experiencia pensada para disfrutar antes, durante y después de cada partido. Porque para nosotros, el pádel no es solo deporte: es compartir, encontrarse y sentirse parte de un lugar.
-            </p>
+      <div className="relative max-w-[1280px] mx-auto px-6 md:px-12 py-16 md:py-20">
+        <div>
+          <Eyebrow light>Contacto</Eyebrow>
+          <h2 className="mt-5 text-[34px] md:text-[44px] font-black uppercase leading-none tracking-[-0.01em]">
+            Reservá tu cancha
+          </h2>
+          <p className="mt-4 max-w-[420px] text-white/80 text-[16px] leading-relaxed">
+            Por WhatsApp u online. Canchas techadas y al aire libre, abiertas todos los días.
+          </p>
+
+          <div className="mt-8 flex flex-wrap gap-4">
+            <a
+              href={WHATSAPP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-3 px-7 py-4 rounded-full border border-white/70 text-[15px] font-semibold hover:bg-white hover:text-[#111318] transition"
+            >
+              <MessageCircle size={20} /> {WHATSAPP_TEXTO}
+            </a>
+
+            <a
+              href={MAPS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-3 px-7 py-4 rounded-full text-[15px] font-semibold text-white/85 hover:text-[#C9945A] transition"
+            >
+              <MapPin size={20} /> {DIRECCION}
+            </a>
+
+            <a
+              href={INSTAGRAM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-3 px-7 py-4 rounded-full text-[15px] font-semibold text-white/85 hover:text-[#C9945A] transition"
+            >
+              <InstagramIcon size={20} /> @{INSTAGRAM_USUARIO}
+            </a>
           </div>
         </div>
+
       </div>
     </section>
   );
@@ -352,17 +473,50 @@ function About() {
 
 function Footer() {
   return (
-    <footer
-      id="contacto"
-      className="bg-[#06122B] text-[#F5F1E9] py-16 border-t border-[#CD9A50]/20"
-    >
-      <div className="max-w-[1280px] mx-auto px-6 md:px-12">
-        <p className="text-xs uppercase tracking-widest text-[#CD9A50] mb-4">
-          Contacto
-        </p>
-        <h3 className="text-3xl font-black mb-5">Reservá tu cancha</h3>
-        <p className="text-[#F5F1E9]/60">WhatsApp +54 9 2214 55-6677</p>
+    <footer className="bg-[#0E1013] text-white">
+      <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-8 flex flex-col md:flex-row items-center justify-between gap-6">
+        <Logo />
+
+        <div className="flex flex-wrap justify-center gap-x-8 gap-y-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/75">
+          {NAV.map((n) => (
+            <a key={n.href} href={n.href} className="hover:text-[#C9945A] transition">
+              {n.label}
+            </a>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <a
+            href={INSTAGRAM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Instagram de Distrito Padel"
+            className="w-10 h-10 rounded-full border border-white/40 flex items-center justify-center hover:border-[#C9945A] hover:text-[#C9945A] transition"
+          >
+            <InstagramIcon size={18} />
+          </a>
+          <a
+            href={WHATSAPP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Escribinos por WhatsApp"
+            className="w-10 h-10 rounded-full border border-white/40 flex items-center justify-center hover:border-[#C9945A] hover:text-[#C9945A] transition"
+          >
+            <MessageCircle size={18} />
+          </a>
+        </div>
       </div>
     </footer>
+  );
+}
+
+// lucide-react no incluye el logo de Instagram
+function InstagramIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="5" />
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="17.5" cy="6.5" r="0.6" fill="currentColor" />
+    </svg>
   );
 }

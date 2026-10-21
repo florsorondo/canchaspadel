@@ -23,6 +23,7 @@ const EVENTO_VACIO = {
   end_time: "",
   spots: 8,
   price: "",
+  deposit: "",
 };
 
 export default function CrearEvento() {
@@ -83,6 +84,11 @@ export default function CrearEvento() {
 
     if (!event.court_id) {
       alert("Elegí una cancha");
+      return;
+    }
+
+    if (Number(event.deposit) > Number(event.price)) {
+      alert("La seña no puede ser mayor al precio por persona");
       return;
     }
 
@@ -260,7 +266,7 @@ export default function CrearEvento() {
             </p>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <input
               type="number"
               min="1"
@@ -277,7 +283,20 @@ export default function CrearEvento() {
               placeholder="Precio por persona"
               className="px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B]"
             />
+
+            <input
+              type="number"
+              min="0"
+              value={event.deposit}
+              onChange={(e) => setEvent({ ...event, deposit: e.target.value })}
+              placeholder="Seña por persona"
+              className="px-4 py-3 rounded-sm border border-[#D6D0C8] outline-none focus:border-[#06122B]"
+            />
           </div>
+
+          <p className="text-xs text-[#6D7580] -mt-1">
+            Al anotarse, cada persona paga la seña con Mercado Pago. Si no ponés seña, paga el precio completo.
+          </p>
 
           <PrimaryButton disabled={creating} className="w-full py-3">
             {creating ? "Creando..." : "Crear evento"}
@@ -306,6 +325,11 @@ export default function CrearEvento() {
                     <p className="text-sm text-[#6D7580]">
                       {getCourtNameById(courts, ev.court_id)} · {ev.date} · {ev.time}{ev.end_time ? ` a ${ev.end_time}` : ""}
                     </p>
+                    {Number(ev.deposit) > 0 && (
+                      <p className="text-sm text-[#6D7580]">
+                        Seña ${Number(ev.deposit).toLocaleString("es-AR")} · Precio ${Number(ev.price || 0).toLocaleString("es-AR")}
+                      </p>
+                    )}
                     <p className="text-xs text-[#CD9A50] font-semibold mt-1">
                       {eventoAbierto === ev.id ? "Ocultar anotados ▲" : "Ver anotados ▼"}
                     </p>
@@ -323,15 +347,24 @@ export default function CrearEvento() {
                   <div className="mt-4 pt-4 border-t border-[#EFEAE0]">
                     {cargandoRegistrantes && !registrantes[ev.id] ? (
                       <p className="text-sm text-[#6D7580]">Cargando anotados...</p>
-                    ) : registrantes[ev.id]?.length > 0 ? (
+                    ) : registrantes[ev.id]?.some((r) => r.status !== "cancelled") ? (
                       <div className="flex flex-col gap-2">
-                        {registrantes[ev.id].map((r) => (
+                        {registrantes[ev.id].filter((r) => r.status !== "cancelled").map((r) => (
                           <div
                             key={r.id}
                             className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-sm border-b border-[#EFEAE0] last:border-none pb-2 last:pb-0"
                           >
                             <span className="font-semibold text-[#06122B]">
                               {r.name} {r.last_name}
+                              <span
+                                className={`ml-2 text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                                  r.status === "pending"
+                                    ? "bg-[#EFEAE0] text-[#6D7580]"
+                                    : "bg-[#2f6f61]/15 text-[#2f6f61]"
+                                }`}
+                              >
+                                {r.status === "paid" ? "Seña pagada" : r.status === "pending" ? "Pago pendiente" : "Anotado"}
+                              </span>
                             </span>
                             <span className="text-[#6D7580]">
                               {r.phone} · {r.email}

@@ -54,6 +54,11 @@ export function useEvent(eventId) {
         throw new Error(data.message || "Error registrando jugador");
       }
 
+      // Si hay seña, el backend devuelve el link de pago de Mercado Pago
+      if (data.init_point) {
+        return { success: true, initPoint: data.init_point };
+      }
+
       await fetchEvent();
 
       return { success: true };
