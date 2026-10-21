@@ -57,6 +57,9 @@ export default function Step2({ booking, updateBooking, setStep }) {
     return { day, dateISO, disabled };
   });
 
+  // Casilleros vacíos para que el día 1 caiga en su columna (la semana empieza el lunes)
+  const leadingBlanks = (new Date(year, month, 1).getDay() + 6) % 7;
+
   const handleSelectDay = (dateISO) => {
     setSelectedDate(dateISO);
     setSelectedTime(null);
@@ -127,6 +130,9 @@ export default function Step2({ booking, updateBooking, setStep }) {
             </div>
 
             <div className="grid grid-cols-7 gap-2 sm:gap-3">
+              {Array.from({ length: leadingBlanks }, (_, i) => (
+                <div key={`blank-${i}`} />
+              ))}
               {days.map((item) => (
                 <button
                   key={item.day}
