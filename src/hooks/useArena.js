@@ -9,6 +9,7 @@ const ArenaContext = createContext(null);
 function useArenaState() {
   const [arena, setArena] = useState(null);
   const [arenaId, setArenaId] = useState(null);
+  const [role, setRole] = useState(null);
   const [loadingArena, setLoadingArena] = useState(true);
   const [savingArena, setSavingArena] = useState(false);
   const [errorArena, setErrorArena] = useState(null);
@@ -35,6 +36,7 @@ function useArenaState() {
 
       setArena(data);
       setArenaId(data.id);
+      setRole(data.role);
     } catch (error) {
       console.error("Error obteniendo arena:", error);
       setErrorArena(error.message);
@@ -82,6 +84,8 @@ function useArenaState() {
   return {
     arena,
     arenaId,
+    role,
+    isOwner: role === "owner",
     loadingArena,
     savingArena,
     errorArena,

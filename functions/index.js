@@ -158,7 +158,20 @@ const resolveArenaId = async (req) => {
   return null;
 };
 
-const verifyArenaOwner = async (req, res, next) => {
+// Empleados del complejo: un doc por usuario en arena_staff (id = uid de Firebase Auth)
+const getStaffDoc = (uid) => db.collection("arena_staff").doc(uid).get();
+
+// "owner", "employee" o null si el usuario no pertenece al complejo
+const getArenaRole = async (arenaDoc, uid) => {
+  if (!arenaDoc.exists) return null;
+  if (arenaDoc.data().auth_id === uid) return "owner";
+
+  const staffDoc = await getStaffDoc(uid);
+
+  return staffDoc.exists && staffDoc.data().arena_id === arenaDoc.id ? "employee" : null;
+};
+
+const verifyArenaRole = (allowedRoles) => async (req, res, next) => {
   try {
     const arenaId = await resolveArenaId(req);
 
@@ -167,12 +180,14 @@ const verifyArenaOwner = async (req, res, next) => {
     }
 
     const arenaDoc = await db.collection("arena").doc(arenaId).get();
+    const role = await getArenaRole(arenaDoc, req.uid);
 
-    if (!arenaDoc.exists || arenaDoc.data().auth_id !== req.uid) {
+    if (!allowedRoles.includes(role)) {
       return res.status(403).json({ message: "No autorizado" });
     }
 
     req.arenaId = arenaId;
+    req.arenaRole = role;
 
     return next();
   } catch (error) {
@@ -180,6 +195,9 @@ const verifyArenaOwner = async (req, res, next) => {
     return res.status(500).json({ message: "Error de autorización" });
   }
 };
+
+const verifyArenaMember = verifyArenaRole(["owner", "employee"]);
+const verifyArenaOwner = verifyArenaRole(["owner"]);
 
 /* ======================================================
    BOOKING / COUPON HELPERS
@@ -302,16 +320,21 @@ app.get("/my-arena/:authId", verifyAuth, async (req, res) => {
       .limit(1)
       .get();
 
-    if (snapshot.empty) {
-      return res.status(404).json({ message: "Arena no encontrada" });
+    if (!snapshot.empty) {
+      const doc = snapshot.docs[0];
+      return res.json({ id: doc.id, ...doc.data(), role: "owner" });
     }
 
-    const doc = snapshot.docs[0];
+    const staffDoc = await getStaffDoc(req.uid);
+    const arenaDoc = staffDoc.exists
+      ? await db.collection("arena").doc(staffDoc.data().arena_id).get()
+      : null;
 
-    return res.json({
-      id: doc.id,
-      ...doc.data(),
-    });
+    if (!arenaDoc?.exists) {
+      return res.status(404).json({ message: "Tu cuenta no tiene acceso a ningún complejo" });
+    }
+
+    return res.json({ id: arenaDoc.id, ...arenaDoc.data(), role: "employee" });
   } catch (error) {
     return res.status(500).json({
       message: "Error obteniendo arena",
@@ -399,7 +422,7 @@ app.get("/arena/:arenaId/payment-methods", async (req, res) => {
   }
 });
 
-app.get("/arena/:arenaId/coupons", verifyAuth, verifyArenaOwner, async (req, res) => {
+app.get("/arena/:arenaId/coupons", verifyAuth, verifyArenaMember, async (req, res) => {
   try {
     const { arenaId } = req.params;
     const includeInactive = req.query.all === "true";
@@ -427,7 +450,7 @@ app.get("/arena/:arenaId/coupons", verifyAuth, verifyArenaOwner, async (req, res
   }
 });
 
-app.get("/arena/:arenaId/bookings", verifyAuth, verifyArenaOwner, async (req, res) => {
+app.get("/arena/:arenaId/bookings", verifyAuth, verifyArenaMember, async (req, res) => {
   try {
     const { arenaId } = req.params;
 
@@ -582,6 +605,12 @@ app.post("/arena", verifyAuth, async (req, res) => {
       });
     }
 
+    if ((await getStaffDoc(req.uid)).exists) {
+      return res.status(403).json({
+        message: "Una cuenta de empleado no puede crear un complejo",
+      });
+    }
+
     const arenaRef = await db.collection("arena").add({
       name: body.name,
       address: body.address,
@@ -606,7 +635,7 @@ app.post("/arena", verifyAuth, async (req, res) => {
   }
 });
 
-app.patch("/arena/:arenaId", verifyAuth, verifyArenaOwner, async (req, res) => {
+app.patch("/arena/:arenaId", verifyAuth, verifyArenaMember, async (req, res) => {
   try {
     const { arenaId } = req.params;
     const {
@@ -646,12 +675,105 @@ app.patch("/arena/:arenaId", verifyAuth, verifyArenaOwner, async (req, res) => {
   }
 });
 
+/* ======================================================
+   EQUIPO (EMPLEADOS DEL COMPLEJO) — SOLO DUEÑO
+====================================================== */
+
+app.get("/arena/:arenaId/staff", verifyAuth, verifyArenaOwner, async (req, res) => {
+  try {
+    const snapshot = await db
+      .collection("arena_staff")
+      .where("arena_id", "==", req.params.arenaId)
+      .get();
+
+    const staff = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    return res.json(staff);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error obteniendo el equipo" });
+  }
+});
+
+app.post("/arena/:arenaId/staff", verifyAuth, verifyArenaOwner, async (req, res) => {
+  try {
+    const { arenaId } = req.params;
+    const name = String(req.body.name || "").trim();
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+
+    if (!name || !email) {
+      return res.status(400).json({ message: "Completá nombre y email" });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        message: "La contraseña tiene que tener al menos 6 caracteres",
+      });
+    }
+
+    let user;
+
+    try {
+      user = await admin.auth().createUser({ email, password, displayName: name });
+    } catch (error) {
+      if (error.code === "auth/email-already-exists") {
+        return res.status(409).json({ message: "Ya existe una cuenta con ese email" });
+      }
+      if (error.code === "auth/invalid-email") {
+        return res.status(400).json({ message: "El email no es válido" });
+      }
+      throw error;
+    }
+
+    await db.collection("arena_staff").doc(user.uid).set({
+      arena_id: arenaId,
+      name,
+      email,
+      role: "employee",
+      created_by: req.uid,
+      created_at: FieldValue.serverTimestamp(),
+    });
+
+    return res.status(201).json({ message: "Empleado creado", id: user.uid });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error creando el empleado" });
+  }
+});
+
+app.delete("/arena/:arenaId/staff/:staffId", verifyAuth, verifyArenaOwner, async (req, res) => {
+  try {
+    const { arenaId, staffId } = req.params;
+    const staffRef = db.collection("arena_staff").doc(staffId);
+    const staffDoc = await staffRef.get();
+
+    if (!staffDoc.exists || staffDoc.data().arena_id !== arenaId) {
+      return res.status(404).json({ message: "Empleado no encontrado" });
+    }
+
+    await staffRef.delete();
+
+    // Se borra la cuenta para que no pueda volver a iniciar sesión
+    await admin
+      .auth()
+      .deleteUser(staffId)
+      .catch((error) => {
+        if (error.code !== "auth/user-not-found") throw error;
+      });
+
+    return res.json({ message: "Empleado eliminado" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error eliminando el empleado" });
+  }
+});
 
 /* ======================================================
    POST COURT
 ====================================================== */
 
-app.post("/courts", verifyAuth, verifyArenaOwner, async (req, res) => {
+app.post("/courts", verifyAuth, verifyArenaMember, async (req, res) => {
 
   try {
 
@@ -745,7 +867,7 @@ app.post("/courts", verifyAuth, verifyArenaOwner, async (req, res) => {
    POST PAYMENT METHOD
 ====================================================== */
 
-app.post("/payment-methods", verifyAuth, verifyArenaOwner, async (req, res) => {
+app.post("/payment-methods", verifyAuth, verifyArenaMember, async (req, res) => {
   try {
     const body = req.body;
 
@@ -775,7 +897,7 @@ app.post("/payment-methods", verifyAuth, verifyArenaOwner, async (req, res) => {
 app.patch(
   "/payment-methods/:paymentMethodId",
   verifyAuth,
-  verifyArenaOwner,
+  verifyArenaMember,
   async (req, res) => {
   try {
     const { paymentMethodId } = req.params;
@@ -802,7 +924,7 @@ app.patch(
    POST COUPON
 ====================================================== */
 
-app.post("/coupons", verifyAuth, verifyArenaOwner, async (req, res) => {
+app.post("/coupons", verifyAuth, verifyArenaMember, async (req, res) => {
   try {
     const body = req.body;
 
@@ -844,7 +966,7 @@ app.post("/coupons", verifyAuth, verifyArenaOwner, async (req, res) => {
   }
 });
 
-app.patch("/coupons/:couponId", verifyAuth, verifyArenaOwner, async (req, res) => {
+app.patch("/coupons/:couponId", verifyAuth, verifyArenaMember, async (req, res) => {
   try {
     const { couponId } = req.params;
     const { active, value, valid_from, valid_to } = req.body;
@@ -909,7 +1031,7 @@ app.post("/arena/:arenaId/coupons/validate", async (req, res) => {
 });
 
 
-app.patch("/bookings/:bookingId", verifyAuth, verifyArenaOwner, async (req, res) => {
+app.patch("/bookings/:bookingId", verifyAuth, verifyArenaMember, async (req, res) => {
   try {
     const { bookingId } = req.params;
     const { status } = req.body;
@@ -1153,7 +1275,7 @@ app.post("/bookings", async (req, res) => {
 app.post(
   "/arena/:arenaId/bookings/manual",
   verifyAuth,
-  verifyArenaOwner,
+  verifyArenaMember,
   async (req, res) => {
     try {
       const { arenaId } = req.params;
@@ -1245,7 +1367,7 @@ app.post(
 app.post(
   "/arena/:arenaId/blocks",
   verifyAuth,
-  verifyArenaOwner,
+  verifyArenaMember,
   async (req, res) => {
     try {
       const { arenaId } = req.params;
@@ -1321,7 +1443,7 @@ app.post(
   }
 );
 
-app.delete("/bookings/:bookingId", verifyAuth, verifyArenaOwner, async (req, res) => {
+app.delete("/bookings/:bookingId", verifyAuth, verifyArenaMember, async (req, res) => {
   try {
     const { bookingId } = req.params;
 
@@ -1418,7 +1540,7 @@ app.post("/webhooks/mercadopago", async (req, res) => {
   }
 });
 
-app.patch("/courts/:courtId", verifyAuth, verifyArenaOwner, async (req, res) => {
+app.patch("/courts/:courtId", verifyAuth, verifyArenaMember, async (req, res) => {
   try {
     const { courtId } = req.params;
     const {
@@ -1474,7 +1596,7 @@ app.patch("/courts/:courtId", verifyAuth, verifyArenaOwner, async (req, res) => 
   }
 });
 
-app.delete("/courts/:courtId", verifyAuth, verifyArenaOwner, async (req, res) => {
+app.delete("/courts/:courtId", verifyAuth, verifyArenaMember, async (req, res) => {
   try {
     const { courtId } = req.params;
 
@@ -1497,7 +1619,7 @@ app.delete("/courts/:courtId", verifyAuth, verifyArenaOwner, async (req, res) =>
    EVENTOS / CANCHA LIBRE
 ====================================================== */
 
-app.post("/events", verifyAuth, verifyArenaOwner, async (req, res) => {
+app.post("/events", verifyAuth, verifyArenaMember, async (req, res) => {
   try {
     const { arena_id, court_id, title, date, time, end_time, spots, price, deposit } = req.body;
 
@@ -1777,7 +1899,7 @@ app.post("/events/:eventId/register", async (req, res) => {
 app.get(
   "/events/:eventId/registrations",
   verifyAuth,
-  verifyArenaOwner,
+  verifyArenaMember,
   async (req, res) => {
     try {
       const { eventId } = req.params;
@@ -1800,7 +1922,7 @@ app.get(
   }
 );
 
-app.patch("/events/:eventId", verifyAuth, verifyArenaOwner, async (req, res) => {
+app.patch("/events/:eventId", verifyAuth, verifyArenaMember, async (req, res) => {
   try {
     const { eventId } = req.params;
     const { status, spots, price, date, time, title } = req.body;
