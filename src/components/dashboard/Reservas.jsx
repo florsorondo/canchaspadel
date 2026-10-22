@@ -359,8 +359,9 @@ const BookingDetailModal = ({ reserva, courts, changeStatus, onEliminar, onClose
 
       {reserva.refund_pending && (
         <p className="mb-4 rounded-sm bg-red-50 border border-red-200 text-red-600 text-sm p-3">
-          El cliente pagó por Mercado Pago cuando el turno ya lo tenía otra persona. La reserva
-          quedó cancelada: hay que devolverle el dinero desde Mercado Pago.
+          Hay que devolverle ${Number(reserva.refund_amount || 0).toLocaleString()} al cliente
+          ({reserva.refund_reason || "pago a devolver"}). El dueño lo gestiona desde Cobros →
+          Devoluciones pendientes.
         </p>
       )}
 

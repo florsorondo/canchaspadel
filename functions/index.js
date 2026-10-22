@@ -106,6 +106,22 @@ const registrationOccupiesSpot = (registration, now = Date.now()) => {
 
 const REGISTRATION_REF_PREFIX = "inscripcion:";
 
+// Lo que el cliente pagó por Mercado Pago según el estado de la reserva
+const paidOnlineAmount = (booking) => {
+  if (!booking.mp_payment_id) return 0;
+  if (booking.status === "paid" || booking.status === "completed") return Number(booking.amount) || 0;
+  if (booking.status === "deposit_paid") return Number(booking.deposit_amount) || 0;
+  return 0;
+};
+
+// Campos que dejan una devolución pendiente para que el dueño la vea en Cobros
+const refundFields = (amount, reason) => ({
+  refund_pending: true,
+  refund_amount: Number(amount) || 0,
+  refund_reason: reason,
+  refund_requested_at: FieldValue.serverTimestamp(),
+});
+
 // Estados que se pueden poner a mano desde el panel ("blocked" solo lo crean bloqueos y eventos)
 const ASSIGNABLE_STATUSES = ["pending", "deposit_paid", "paid", "completed", "cancelled"];
 
@@ -789,6 +805,111 @@ app.delete("/arena/:arenaId/staff/:staffId", verifyAuth, verifyArenaOwner, async
 });
 
 /* ======================================================
+   DEVOLUCIONES — SOLO DUEÑO
+====================================================== */
+
+const REFUND_SOURCES = {
+  booking: "bookings",
+  registration: "event_registrations",
+};
+
+app.get("/arena/:arenaId/refunds", verifyAuth, verifyArenaOwner, async (req, res) => {
+  try {
+    const { arenaId } = req.params;
+
+    const [bookingsSnap, registrationsSnap] = await Promise.all(
+      Object.values(REFUND_SOURCES).map((collection) =>
+        db
+          .collection(collection)
+          .where("arena_id", "==", arenaId)
+          .where("refund_pending", "==", true)
+          .get()
+      )
+    );
+
+    const eventIds = [...new Set(registrationsSnap.docs.map((doc) => doc.data().event_id))];
+    const eventDocs = await Promise.all(eventIds.map((id) => db.collection("events").doc(id).get()));
+    const eventTitles = Object.fromEntries(
+      eventDocs.filter((doc) => doc.exists).map((doc) => [doc.id, doc.data().title])
+    );
+
+    const refunds = [
+      ...bookingsSnap.docs.map((doc) => {
+        const b = doc.data();
+        return {
+          kind: "booking",
+          id: doc.id,
+          customer_name: b.customer_name,
+          customer_phone: b.customer_phone,
+          customer_email: b.customer_email,
+          detail: `Reserva #${b.ref_id || doc.id}`,
+          court_id: b.court_id,
+          date: b.date,
+          time: b.time,
+          amount: b.refund_amount || 0,
+          reason: b.refund_reason || "Pago a devolver",
+          mp_payment_id: b.mp_payment_id || null,
+        };
+      }),
+      ...registrationsSnap.docs.map((doc) => {
+        const r = doc.data();
+        return {
+          kind: "registration",
+          id: doc.id,
+          customer_name: `${r.name || ""} ${r.last_name || ""}`.trim(),
+          customer_phone: r.phone,
+          customer_email: r.email,
+          detail: `Evento: ${eventTitles[r.event_id] || "evento"}`,
+          amount: r.refund_amount || 0,
+          reason: r.refund_reason || "Pago a devolver",
+          mp_payment_id: r.mp_payment_id || null,
+        };
+      }),
+    ];
+
+    return res.json(refunds);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error obteniendo devoluciones" });
+  }
+});
+
+app.post(
+  "/arena/:arenaId/refunds/:kind/:refundId/done",
+  verifyAuth,
+  verifyArenaOwner,
+  async (req, res) => {
+    try {
+      const { arenaId, kind, refundId } = req.params;
+      const collection = REFUND_SOURCES[kind];
+
+      if (!collection) {
+        return res.status(400).json({ message: "Tipo de devolución inválido" });
+      }
+
+      const ref = db.collection(collection).doc(refundId);
+      const snap = await ref.get();
+
+      if (!snap.exists || snap.data().arena_id !== arenaId) {
+        return res.status(404).json({ message: "Devolución no encontrada" });
+      }
+
+      await ref.update({
+        refund_pending: false,
+        refunded_at: FieldValue.serverTimestamp(),
+        refunded_by: req.uid,
+        updated_at: FieldValue.serverTimestamp(),
+      });
+
+      return res.json({ message: "Devolución registrada" });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ message: "Error registrando la devolución" });
+    }
+  }
+);
+
+/* ======================================================
    POST COURT
 ====================================================== */
 
@@ -1080,8 +1201,16 @@ app.patch("/bookings/:bookingId", verifyAuth, verifyArenaMember, async (req, res
         }
       }
 
+      // Cancelar una reserva que se pagó por Mercado Pago deja la devolución pendiente
+      const paid = paidOnlineAmount(booking);
+      const refund =
+        status === "cancelled" && paid > 0 && !booking.refund_pending && !booking.refunded_at
+          ? refundFields(paid, "Cancelada desde el panel")
+          : {};
+
       transaction.update(bookingRef, {
         status,
+        ...refund,
         updated_at: FieldValue.serverTimestamp(),
       });
     });
@@ -1131,8 +1260,11 @@ app.post("/bookings/:bookingId/cancel", async (req, res) => {
       });
     }
 
+    const paid = paidOnlineAmount(booking);
+
     await bookingRef.update({
       status: "cancelled",
+      ...(paid > 0 ? refundFields(paid, "El cliente canceló la reserva") : {}),
       updated_at: FieldValue.serverTimestamp(),
     });
 
@@ -1579,7 +1711,7 @@ app.post("/webhooks/mercadopago", async (req, res) => {
           await registrationRef.update({
             status: "cancelled",
             mp_payment_id: String(paymentId),
-            refund_pending: true,
+            ...refundFields(payment.transaction_amount, "Pagó cuando el evento ya estaba lleno"),
             cancel_reason: "paid_after_event_full",
             updated_at: FieldValue.serverTimestamp(),
           });
@@ -1631,7 +1763,10 @@ app.post("/webhooks/mercadopago", async (req, res) => {
           transaction.update(bookingRef, {
             status: "cancelled",
             mp_payment_id: String(paymentId),
-            refund_pending: true,
+            ...refundFields(
+              payment.transaction_amount,
+              "Pagó cuando el turno ya lo tenía otra persona"
+            ),
             cancel_reason: "paid_after_slot_taken",
             updated_at: FieldValue.serverTimestamp(),
           });
@@ -2097,6 +2232,21 @@ app.patch("/events/:eventId", verifyAuth, verifyArenaMember, async (req, res) =>
       blockSnapshot.docs.forEach((doc) => {
         batch.update(doc.ref, {
           status: "cancelled",
+          updated_at: FieldValue.serverTimestamp(),
+        });
+      });
+
+      // Los anotados que ya pagaron quedan para devolverles el dinero
+      const paidRegistrations = await db
+        .collection("event_registrations")
+        .where("event_id", "==", eventId)
+        .where("status", "==", "paid")
+        .get();
+
+      paidRegistrations.docs.forEach((doc) => {
+        batch.update(doc.ref, {
+          status: "cancelled",
+          ...refundFields(doc.data().amount, "Se canceló el evento"),
           updated_at: FieldValue.serverTimestamp(),
         });
       });

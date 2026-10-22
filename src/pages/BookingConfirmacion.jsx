@@ -26,6 +26,12 @@ const ESTADO_INFO = {
     color: "text-red-500",
     label: "Pago a devolver",
   },
+  cancelled_refund: {
+    titulo: "Reserva cancelada",
+    detalle: "La reserva fue cancelada. El club te va a devolver lo que pagaste por Mercado Pago.",
+    color: "text-red-500",
+    label: "Cancelada",
+  },
   cancelled: {
     titulo: "El pago no se pudo confirmar",
     detalle: "La reserva fue cancelada. Podés intentar de nuevo.",
@@ -67,8 +73,15 @@ export default function BookingConfirmacion() {
       })
     );
 
-  // Pagó cuando el turno ya estaba tomado: se muestra aparte para no decirle que el pago falló
-  const status = booking?.refund_pending ? "refund_pending" : booking?.status;
+  // Cancelada con pago a devolver: se muestra aparte para no decirle que el pago falló
+  const estadoMostrado = () => {
+    if (booking?.cancel_reason === "paid_after_slot_taken") return "refund_pending";
+    if (booking?.status === "cancelled" && (booking.refund_pending || booking.refunded_at)) {
+      return "cancelled_refund";
+    }
+    return booking?.status;
+  };
+  const status = estadoMostrado();
   const isTerminal = status && ESTADO_INFO[status];
   const isPending = !isTerminal && !timedOut;
 
