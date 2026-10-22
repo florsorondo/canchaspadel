@@ -10,6 +10,8 @@ import {
   montoCobrado,
 } from "../../utils/bookingStatus";
 import Loader from "../Loader";
+import { useRefunds } from "../../hooks/useRefunds";
+import { formatearFecha, linkWhatsApp } from "../../utils/whatsapp";
 
 const inicioDeSemana = (hoy) => {
   const dia = hoy.getDay();
@@ -63,17 +65,110 @@ const MovimientoRow = ({ booking, courts, changeStatus }) => {
   );
 };
 
+const Devoluciones = ({ refunds, courts, saving, onMarcarDevuelto }) => {
+  if (refunds.length === 0) return null;
+
+  const total = refunds.reduce((sum, r) => sum + (r.amount || 0), 0);
+
+  return (
+    <div className="border-2 border-red-200 rounded-lg overflow-hidden bg-white mb-8">
+      <div className="p-5 border-b border-red-200 bg-red-50">
+        <h2 className="text-2xl font-black text-red-600">
+          Devoluciones pendientes ({refunds.length})
+        </h2>
+        <p className="text-sm text-[#06122B] mt-1">
+          Hay ${total.toLocaleString()} para devolver. Para cada una: entrá a Mercado Pago →
+          Actividad, buscá la operación por su número, tocá <b>Devolver dinero</b> y después
+          marcala acá como devuelta.
+        </p>
+      </div>
+
+      <div className="divide-y divide-[#EFEAE0]">
+        {refunds.map((r) => {
+          const whatsapp = linkWhatsApp(r.customer_phone);
+
+          return (
+            <div
+              key={`${r.kind}-${r.id}`}
+              className="p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
+            >
+              <div className="text-[#06122B]">
+                <p className="font-black">
+                  {r.customer_name || "Sin nombre"} · ${Number(r.amount || 0).toLocaleString()}
+                </p>
+                <p className="text-sm text-[#6D7580] mt-1">
+                  {r.detail}
+                  {r.date ? ` · ${getCourtNameById(courts, r.court_id)} · ${formatearFecha(r.date)} ${r.time} hs` : ""}
+                </p>
+                <p className="text-sm mt-1">
+                  <span className="font-semibold">Motivo:</span> {r.reason}
+                </p>
+                <p className="text-sm mt-1">
+                  <span className="font-semibold">Operación de Mercado Pago:</span>{" "}
+                  {r.mp_payment_id ? `Nº ${r.mp_payment_id}` : "sin número (buscala por el nombre del cliente)"}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                {whatsapp && (
+                  <a
+                    href={whatsapp}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="border border-[#D6D0C8] rounded-sm px-4 py-2 text-sm font-semibold text-[#06122B] hover:border-[#06122B] transition"
+                  >
+                    Avisar por WhatsApp
+                  </a>
+                )}
+
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => onMarcarDevuelto(r)}
+                  className="bg-[#06122B] text-white rounded-sm px-4 py-2 text-sm font-bold hover:opacity-90 transition disabled:opacity-50"
+                >
+                  Marcar como devuelto
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const Ingresos = () => {
   const { arenaId, loadingArena } = useArena();
-  const { bookings, loading: loadingBookings, changeStatus } = useBookings(arenaId);
+  const { bookings, loading: loadingBookings, changeStatus, fetchBookings } = useBookings(arenaId);
   const { courts, loadingCourts } = useCourts(arenaId);
+  const { refunds, saving: savingRefund, markRefunded, fetchRefunds } = useRefunds(arenaId);
+
+  const handleMarcarDevuelto = async (refund) => {
+    if (!confirm(`¿Ya le devolviste $${Number(refund.amount || 0).toLocaleString()} a ${refund.customer_name}?`)) {
+      return;
+    }
+
+    const result = await markRefunded(refund);
+
+    if (!result.success) {
+      alert(result.error);
+      return;
+    }
+
+    fetchBookings();
+  };
 
   const cambiarEstado = async (bookingId, status) => {
     const result = await changeStatus(bookingId, status);
 
     if (!result.success) {
       alert(result.error);
+      return;
     }
+
+    // Cancelar una reserva pagada puede generar una devolución
+    fetchRefunds();
   };
 
   if (loadingArena || loadingBookings || loadingCourts) {
@@ -115,6 +210,13 @@ const Ingresos = () => {
 
   return (
     <div className="p-4 md:p-8">
+      <Devoluciones
+        refunds={refunds}
+        courts={courts}
+        saving={savingRefund}
+        onMarcarDevuelto={handleMarcarDevuelto}
+      />
+
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
         <Card title="Cobrado hoy" value={`${ingresosHoy.toLocaleString()}`} subtitle="por reservas" />
         <Card title="Cobrado esta semana" value={`${ingresosSemana.toLocaleString()}`} subtitle="por reservas" />

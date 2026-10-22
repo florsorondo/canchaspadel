@@ -13,6 +13,7 @@ import { useNavigate } from "react-router-dom";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import Loader from "../components/Loader.jsx";
 import { ArenaProvider, useArena } from "../hooks/useArena";
+import { useRefunds } from "../hooks/useRefunds";
 
 // ownerOnly: pestañas que un empleado no ve (el backend también lo bloquea)
 const TABS = [
@@ -59,8 +60,15 @@ const Dashboard = () => {
 };
 
 const DashboardContent = ({ onLogout }) => {
-  const { isOwner, loadingArena, errorArena } = useArena();
+  const { arenaId, isOwner, loadingArena, errorArena } = useArena();
   const [tab, setTab] = useState("reservas");
+  // Solo el dueño: muestra cuántas devoluciones hay pendientes en la pestaña Cobros
+  const { refunds, fetchRefunds } = useRefunds(arenaId, isOwner);
+
+  const cambiarTab = (id) => {
+    setTab(id);
+    if (isOwner) fetchRefunds();
+  };
 
   if (loadingArena) {
     return <Loader />;
@@ -114,9 +122,13 @@ const DashboardContent = ({ onLogout }) => {
             {tabs.map((t) => (
               <Tab
                 key={t.id}
-                label={t.label}
+                label={
+                  t.id === "ingresos" && refunds.length > 0
+                    ? `${t.label} (${refunds.length} a devolver)`
+                    : t.label
+                }
                 active={activeTab.id === t.id}
-                onClick={() => setTab(t.id)}
+                onClick={() => cambiarTab(t.id)}
               />
             ))}
           </div>
