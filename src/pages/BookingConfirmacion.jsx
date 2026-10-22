@@ -20,6 +20,12 @@ const ESTADO_INFO = {
     color: "text-[#2f6f61]",
     label: "Señado",
   },
+  refund_pending: {
+    titulo: "El turno ya estaba ocupado",
+    detalle: "Tu pago llegó cuando otra persona ya había tomado el horario. El club te va a devolver el dinero; escribile por WhatsApp si tenés dudas.",
+    color: "text-red-500",
+    label: "Pago a devolver",
+  },
   cancelled: {
     titulo: "El pago no se pudo confirmar",
     detalle: "La reserva fue cancelada. Podés intentar de nuevo.",
@@ -32,7 +38,8 @@ const puedeCancelarse = (booking) => {
   if (!booking) return false;
   if (!["pending", "deposit_paid", "paid"].includes(booking.status)) return false;
   if (!booking.date) return true;
-  return booking.date >= new Date().toISOString().slice(0, 10);
+  // Fecha local: con toISOString (UTC), después de las 21 hs ya era "mañana"
+  return booking.date >= new Date().toLocaleDateString("en-CA");
 };
 
 export default function BookingConfirmacion() {
@@ -60,7 +67,8 @@ export default function BookingConfirmacion() {
       })
     );
 
-  const status = booking?.status;
+  // Pagó cuando el turno ya estaba tomado: se muestra aparte para no decirle que el pago falló
+  const status = booking?.refund_pending ? "refund_pending" : booking?.status;
   const isTerminal = status && ESTADO_INFO[status];
   const isPending = !isTerminal && !timedOut;
 

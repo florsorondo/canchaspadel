@@ -79,6 +79,14 @@ const Reservas = () => {
     );
   }
 
+  const cambiarEstado = async (bookingId, status) => {
+    const result = await changeStatus(bookingId, status);
+
+    if (!result.success) {
+      alert(result.error);
+    }
+  };
+
   const handleQuitarBloqueo = async (bookingId) => {
     if (!confirm("¿Liberar este horario para que se pueda volver a reservar?")) return;
 
@@ -177,7 +185,7 @@ const Reservas = () => {
                   reserva={booking}
                   index={index}
                   courts={courts}
-                  changeStatus={changeStatus}
+                  changeStatus={cambiarEstado}
                   onVerDetalle={() => setDetalle(booking)}
                   onQuitarBloqueo={() => handleQuitarBloqueo(booking.id)}
                 />
@@ -195,9 +203,9 @@ const Reservas = () => {
 
       {detalle && (
         <BookingDetailModal
-          reserva={detalle}
+          reserva={bookings.find((b) => b.id === detalle.id) || detalle}
           courts={courts}
-          changeStatus={changeStatus}
+          changeStatus={cambiarEstado}
           onEliminar={async () => {
             const result = await deleteBooking(detalle.id);
 
@@ -246,6 +254,11 @@ const ReservaRow = ({ reserva, index, courts, changeStatus, onVerDetalle, onQuit
 
       <td className="font-semibold">
         {bloqueada ? reserva.reason || "Horario bloqueado" : reserva.customer_name || "Sin nombre"}
+        {reserva.refund_pending && (
+          <span className="block mt-1 w-fit rounded-full bg-red-100 text-red-600 px-2 py-0.5 text-[10px] font-bold uppercase">
+            Devolver pago
+          </span>
+        )}
       </td>
 
       <td>{bloqueada ? "—" : reserva.customer_phone || reserva.customer_email || "-"}</td>
@@ -343,6 +356,13 @@ const BookingDetailModal = ({ reserva, courts, changeStatus, onEliminar, onClose
           {STATUS_LABELS[estado] || estado}
         </span>
       </div>
+
+      {reserva.refund_pending && (
+        <p className="mb-4 rounded-sm bg-red-50 border border-red-200 text-red-600 text-sm p-3">
+          El cliente pagó por Mercado Pago cuando el turno ya lo tenía otra persona. La reserva
+          quedó cancelada: hay que devolverle el dinero desde Mercado Pago.
+        </p>
+      )}
 
       <div className="bg-white border border-[#D6D0C8] rounded-lg p-4">
         <DetailRow label="Cliente" value={reserva.customer_name || "-"} />

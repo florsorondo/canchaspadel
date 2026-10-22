@@ -44,6 +44,15 @@ const getDayOfWeek = (dateStr) => {
   return DIAS_SEMANA_POR_INDICE[dateObj.getDay()];
 };
 
+// El servidor corre en UTC: "hoy" y "ahora" se calculan con la hora de Argentina
+const AR_TIMEZONE = "America/Argentina/Buenos_Aires";
+const todayAR = () => new Date().toLocaleDateString("en-CA", { timeZone: AR_TIMEZONE });
+const nowHHMMAR = () =>
+  new Date().toLocaleTimeString("en-GB", { timeZone: AR_TIMEZONE, hour: "2-digit", minute: "2-digit" });
+
+const isPastSlot = (date, time) =>
+  date < todayAR() || (date === todayAR() && String(time) <= nowHHMMAR());
+
 const regenerateCourtDates = async (courtId, arenaId, availableDays, availableHours) => {
   const existingSnapshot = await db
     .collection("court_dates")
@@ -97,6 +106,9 @@ const registrationOccupiesSpot = (registration, now = Date.now()) => {
 
 const REGISTRATION_REF_PREFIX = "inscripcion:";
 
+// Estados que se pueden poner a mano desde el panel ("blocked" solo lo crean bloqueos y eventos)
+const ASSIGNABLE_STATUSES = ["pending", "deposit_paid", "paid", "completed", "cancelled"];
+
 const isBookingBlocking = (bookingData, now = Date.now()) => {
   if (bookingData.status === "cancelled") return false;
 
@@ -136,9 +148,10 @@ const verifyAuth = async (req, res, next) => {
   }
 };
 
+// El complejo sale del recurso que se toca (cancha, reserva, cupón...), nunca del body:
+// si no, alguien podría mandar su propio arena_id y editar recursos de otro complejo
 const resolveArenaId = async (req) => {
   if (req.params.arenaId) return req.params.arenaId;
-  if (req.body?.arena_id) return req.body.arena_id;
 
   const lookups = [
     ["courtId", "courts"],
@@ -155,7 +168,8 @@ const resolveArenaId = async (req) => {
     }
   }
 
-  return null;
+  // Solo para crear recursos nuevos (POST /courts, /coupons, /events...)
+  return req.body?.arena_id || null;
 };
 
 // Empleados del complejo: un doc por usuario en arena_staff (id = uid de Firebase Auth)
@@ -491,6 +505,11 @@ app.get("/courts/:courtId/availability", async (req, res) => {
       return res.status(404).json({
         message: "Cancha no encontrada",
       });
+    }
+
+    // Cancha dada de baja: no ofrece turnos aunque alguien tenga el link viejo
+    if (courtDoc.data().available === false) {
+      return res.json({ hours: [] });
     }
 
     const dayOfWeek = getDayOfWeek(date);
@@ -1036,15 +1055,35 @@ app.patch("/bookings/:bookingId", verifyAuth, verifyArenaMember, async (req, res
     const { bookingId } = req.params;
     const { status } = req.body;
 
-    if (!status) {
+    if (!ASSIGNABLE_STATUSES.includes(status)) {
       return res.status(400).json({
-        message: "Status requerido",
+        message: "Estado inválido",
       });
     }
 
-    await db.collection("bookings").doc(bookingId).update({
-      status,
-      updated_at: FieldValue.serverTimestamp(),
+    await db.runTransaction(async (transaction) => {
+      const bookingRef = db.collection("bookings").doc(bookingId);
+      const bookingSnap = await transaction.get(bookingRef);
+      const booking = bookingSnap.data();
+      const updated = { ...booking, status, created_at: booking.created_at };
+
+      // Reactivar una reserva cancelada o vencida: el turno pudo haberlo tomado otra persona
+      if (!isBookingBlocking(booking) && isBookingBlocking(updated)) {
+        const { taken } = await getSlotState(transaction, {
+          courtId: booking.court_id,
+          date: booking.date,
+          time: booking.time,
+        });
+
+        if (taken) {
+          throw new Error("Horario no disponible");
+        }
+      }
+
+      transaction.update(bookingRef, {
+        status,
+        updated_at: FieldValue.serverTimestamp(),
+      });
     });
 
     return res.json({
@@ -1053,6 +1092,12 @@ app.patch("/bookings/:bookingId", verifyAuth, verifyArenaMember, async (req, res
 
   } catch (error) {
     console.error(error);
+
+    if (error.message === "Horario no disponible") {
+      return res.status(409).json({
+        message: "No se puede reactivar: ese horario ya lo tiene otra reserva",
+      });
+    }
 
     return res.status(500).json({
       message: "Error actualizando reserva",
@@ -1071,9 +1116,18 @@ app.post("/bookings/:bookingId/cancel", async (req, res) => {
       return res.status(404).json({ message: "Reserva no encontrada" });
     }
 
-    if (bookingSnap.data().status === "completed") {
+    const booking = bookingSnap.data();
+
+    // Solo reservas de clientes: los bloqueos y eventos se manejan desde el panel
+    if (!["pending", "deposit_paid", "paid"].includes(booking.status)) {
       return res.status(400).json({
-        message: "No se puede cancelar una reserva ya finalizada",
+        message: "Esta reserva ya no se puede cancelar",
+      });
+    }
+
+    if (booking.date < todayAR()) {
+      return res.status(400).json({
+        message: "No se puede cancelar una reserva de un día que ya pasó",
       });
     }
 
@@ -1120,11 +1174,33 @@ app.post("/bookings", async (req, res) => {
       });
     }
 
+    // El calendario ya oculta estos casos, pero la pantalla pudo quedar abierta un rato
+    if (isPastSlot(date, time)) {
+      return res.status(400).json({ message: "Ese horario ya pasó. Elegí otro." });
+    }
+
+    const offeredSlot = await db
+      .collection("court_dates")
+      .where("field_id", "==", court_id)
+      .where("day", "==", getDayOfWeek(date))
+      .where("hour", "==", time)
+      .where("enabled", "==", true)
+      .limit(1)
+      .get();
+
+    if (offeredSlot.empty) {
+      return res.status(400).json({ message: "Horario no disponible" });
+    }
+
     const result = await db.runTransaction(async (transaction) => {
       const courtRef = db.collection("courts").doc(court_id);
       const courtSnap = await transaction.get(courtRef);
 
-      if (!courtSnap.exists) {
+      if (
+        !courtSnap.exists ||
+        courtSnap.data().arena_id !== arena_id ||
+        courtSnap.data().available === false
+      ) {
         throw new Error("Cancha no encontrada");
       }
 
@@ -1487,6 +1563,30 @@ app.post("/webhooks/mercadopago", async (req, res) => {
         return res.sendStatus(200);
       }
 
+      const registration = registrationSnap.data();
+
+      // Mismo caso que las reservas: pagó tarde y el evento ya se llenó con otros
+      if (mpStatus === "approved" && !registrationOccupiesSpot(registration)) {
+        const [eventSnap, othersSnap] = await Promise.all([
+          db.collection("events").doc(registration.event_id).get(),
+          db.collection("event_registrations").where("event_id", "==", registration.event_id).get(),
+        ]);
+        const occupied = othersSnap.docs.filter(
+          (doc) => doc.id !== registrationSnap.id && registrationOccupiesSpot(doc.data())
+        ).length;
+
+        if (!eventSnap.exists || occupied >= (eventSnap.data().spots || 0)) {
+          await registrationRef.update({
+            status: "cancelled",
+            mp_payment_id: String(paymentId),
+            refund_pending: true,
+            cancel_reason: "paid_after_event_full",
+            updated_at: FieldValue.serverTimestamp(),
+          });
+          return res.sendStatus(200);
+        }
+      }
+
       if (mpStatus === "approved") {
         await registrationRef.update({
           status: "paid",
@@ -1515,6 +1615,28 @@ app.post("/webhooks/mercadopago", async (req, res) => {
 
       if (booking.mp_payment_id === String(paymentId)) {
         return;
+      }
+
+      // Pago aprobado de una reserva que ya venció o se canceló: si mientras tanto otra
+      // persona tomó el turno, no se reactiva (serían dos reservas pagas en el mismo
+      // horario). Queda marcada para que el club devuelva el dinero.
+      if (mpStatus === "approved" && !isBookingBlocking(booking)) {
+        const { taken } = await getSlotState(transaction, {
+          courtId: booking.court_id,
+          date: booking.date,
+          time: booking.time,
+        });
+
+        if (taken) {
+          transaction.update(bookingRef, {
+            status: "cancelled",
+            mp_payment_id: String(paymentId),
+            refund_pending: true,
+            cancel_reason: "paid_after_slot_taken",
+            updated_at: FieldValue.serverTimestamp(),
+          });
+          return;
+        }
       }
 
       if (mpStatus === "approved") {
@@ -1634,6 +1756,16 @@ app.post("/events", verifyAuth, verifyArenaMember, async (req, res) => {
       });
     }
 
+    const courtDoc = await db.collection("courts").doc(court_id).get();
+
+    if (!courtDoc.exists || courtDoc.data().arena_id !== arena_id) {
+      return res.status(404).json({ message: "Cancha no encontrada" });
+    }
+
+    if (isPastSlot(date, times[0])) {
+      return res.status(400).json({ message: "No se puede crear un evento en un horario que ya pasó" });
+    }
+
     const eventId = await db.runTransaction(async (transaction) => {
       const takenTimes = [];
 
@@ -1722,10 +1854,10 @@ app.get("/arena/:arenaId/events", async (req, res) => {
       .where("status", "==", "active")
       .get();
 
-    const events = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    // Los eventos de días que ya pasaron dejan de mostrarse
+    const events = snapshot.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
+      .filter((event) => !event.date || event.date >= todayAR());
 
     return res.json(events);
   } catch (error) {
@@ -1794,6 +1926,10 @@ app.post("/events/:eventId/register", async (req, res) => {
       }
 
       const event = eventSnap.data();
+
+      if (event.date && isPastSlot(event.date, event.time)) {
+        throw new Error("Evento finalizado");
+      }
 
       const registrationsQuery = db
         .collection("event_registrations")
@@ -1887,6 +2023,12 @@ app.post("/events/:eventId/register", async (req, res) => {
     if (error.message === "Evento no encontrado") {
       return res.status(404).json({
         message: "Evento no encontrado",
+      });
+    }
+
+    if (error.message === "Evento finalizado") {
+      return res.status(400).json({
+        message: "Este evento ya empezó o terminó",
       });
     }
 
