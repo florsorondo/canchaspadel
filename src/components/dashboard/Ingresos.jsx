@@ -68,6 +68,14 @@ const Ingresos = () => {
   const { bookings, loading: loadingBookings, changeStatus } = useBookings(arenaId);
   const { courts, loadingCourts } = useCourts(arenaId);
 
+  const cambiarEstado = async (bookingId, status) => {
+    const result = await changeStatus(bookingId, status);
+
+    if (!result.success) {
+      alert(result.error);
+    }
+  };
+
   if (loadingArena || loadingBookings || loadingCourts) {
     return <Loader />;
   }
@@ -140,7 +148,7 @@ const Ingresos = () => {
                     key={booking.id}
                     booking={booking}
                     courts={courts}
-                    changeStatus={changeStatus}
+                    changeStatus={cambiarEstado}
                   />
                 ))
               ) : (
